@@ -4,3 +4,13 @@ data/txt_lists/*
 */__pycache__/*
 .idea/*
 logs/*
+jigen-da-polylr-samler-added-run1/*
+jigen-da-run1-no-hyperparameter-changes/*
+jigen-da-run2-no-hyperparameter-changes/*
+jigen-da-run3-lr-changed-to-polylr/*
+jigen-da-run4-lr-changed-to-polylr/*
+outputs/*
+test/*
+testing_da/*
+testing_dothi/*
+

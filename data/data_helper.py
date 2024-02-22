@@ -1,6 +1,7 @@
 from os.path import join, dirname
 
 import torch
+import os
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
@@ -14,14 +15,29 @@ svhn = 'svhn'
 synth = 'synth'
 usps = 'usps'
 
+da_setting_dataset = ["mscoco", "flir", "valmscoco"]
 vlcs_datasets = ["CALTECH", "LABELME", "PASCAL", "SUN"]
 pacs_datasets = ["art_painting", "cartoon", "photo", "sketch"]
 office_datasets = ["amazon", "dslr", "webcam"]
 digits_datasets = [mnist, mnist, svhn, usps]
-available_datasets = office_datasets + pacs_datasets + vlcs_datasets + digits_datasets
+available_datasets = office_datasets + pacs_datasets + vlcs_datasets + digits_datasets + da_setting_dataset
 #office_paths = {dataset: "/home/enoon/data/images/office/%s" % dataset for dataset in office_datasets}
 #pacs_paths = {dataset: "/home/enoon/data/images/PACS/kfold/%s" % dataset for dataset in pacs_datasets}
 #vlcs_paths = {dataset: "/home/enoon/data/images/VLCS/%s/test" % dataset for dataset in pacs_datasets}
+
+
+def make_weight_for_balanced_classes(images, nclasses):
+    count = [0]*nclasses
+    for item in images:
+        count[item[1]] += 1
+    weight_per_class = [0.]*nclasses
+    N = float(sum(count))
+    for i in range(nclasses):
+        weight_per_class[i] = N/float(count[i])
+    weight = [0]*len(images)
+    for idx, val in enumerate(images):
+        weight[idx] = weight_per_class[val[1]]
+    return weight
 #paths = {**office_paths, **pacs_paths, **vlcs_paths}
 
 dataset_std = {mnist: (0.30280363, 0.30280363, 0.30280363),
@@ -60,7 +76,8 @@ def get_train_dataloader(args, patches):
     img_transformer, tile_transformer = get_train_transformers(args)
     limit = args.limit_source
     for dname in dataset_list:
-        name_train, name_val, labels_train, labels_val = get_split_dataset_info(join(dirname(__file__), 'txt_lists', '%s_train.txt' % dname), args.val_size)
+        # breakpoint()
+        name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', args.val_size)
         train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
                                       tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
         if limit:
@@ -71,9 +88,15 @@ def get_train_dataloader(args, patches):
                               patches=patches, jig_classes=args.jigsaw_n_classes))
     dataset = ConcatDataset(datasets)
     val_dataset = ConcatDataset(val_datasets)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+    weight = make_weight_for_balanced_classes(dataset.imgs, len(dataset.classes))
+    weight=torch.DoubleTensor(weight)
+
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
+
+    loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler=sampler, num_workers=16, pin_memory=True, drop_last=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=16, pin_memory=True, drop_last=False)
     return loader, val_loader
+
 
 
 def get_val_dataloader(args, patches=False):
@@ -106,12 +129,22 @@ def get_jigsaw_val_dataloader(args, patches=False):
 
 def get_train_transformers(args):
     img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale))]
+    rand_hor_flip_float = 0.5
+    # breakpoint()
+    # if rand_hor_flip_float > 0.0:
+    # print(args.random_horiz_flip)
+    # print(type(args.random_horiz_flip))
+    # print(ioghoishjogijh)
     if args.random_horiz_flip > 0.0:
         img_tr.append(transforms.RandomHorizontalFlip(args.random_horiz_flip))
+    # breakpoint()
     if args.jitter > 0.0:
         img_tr.append(transforms.ColorJitter(brightness=args.jitter, contrast=args.jitter, saturation=args.jitter, hue=min(0.5, args.jitter)))
+    
+    # breakpoint()
 
     tile_tr = []
+    
     if args.tile_random_grayscale:
         tile_tr.append(transforms.RandomGrayscale(args.tile_random_grayscale))
     tile_tr = tile_tr + [transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]

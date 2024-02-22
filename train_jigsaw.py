@@ -9,9 +9,28 @@ from data import data_helper
 from data.data_helper import available_datasets
 from models import model_factory
 from optimizer.optimizer_helper import get_optim_and_scheduler
-from utils.Logger import Logger
+# from utils.Logger import Logger
 import numpy as np
+import os
 
+
+
+def get_logger(log_file):
+    from logging import getLogger, FileHandler, StreamHandler, Formatter, DEBUG, INFO  # noqa
+    fh = FileHandler(log_file)
+    fh.setLevel(DEBUG)
+    sh = StreamHandler()
+    sh.setLevel(INFO)
+    for handler in [fh, sh]:
+        formatter = Formatter('%(asctime)s - %(message)s')
+        handler.setFormatter(formatter)
+    logger = getLogger('adda')
+    logger.setLevel(INFO)
+    logger.addHandler(fh)
+    logger.addHandler(sh)
+    return logger
+
+# start at 12:50
 
 def get_args():
     parser = argparse.ArgumentParser(description="Script to launch jigsaw training", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -36,19 +55,28 @@ def get_args():
     parser.add_argument("--network", choices=model_factory.nets_map.keys(), help="Which network to use", default="caffenet")
     parser.add_argument("--jig_weight", type=float, default=0.1, help="Weight for the jigsaw puzzle")
     parser.add_argument("--ooo_weight", type=float, default=0, help="Weight for odd one out task")
-    parser.add_argument("--tf_logger", type=bool, default=True, help="If true will save tensorboard compatible logs")
+    parser.add_argument("--tf_logger", default=True, help="If true will save tensorboard compatible logs")
     parser.add_argument("--val_size", type=float, default="0.1", help="Validation size (between 0 and 1)")
-    parser.add_argument("--folder_name", default=None, help="Used by the logger to save logs")
+    parser.add_argument("--folder_name", default="testing", help="Used by the logger to save logs")
     parser.add_argument("--bias_whole_image", default=None, type=float, help="If set, will bias the training procedure to show more often the whole image")
-    parser.add_argument("--TTA", type=bool, action='store_true', help="Activate test time data augmentation")
-    parser.add_argument("--classify_only_sane", action='store_true', type=bool,
+    parser.add_argument("--TTA", action='store_true', help="Activate test time data augmentation")
+    parser.add_argument("--classify_only_sane", action='store_true', 
                         help="If true, the network will only try to classify the non scrambled images")
-    parser.add_argument("--train_all", action='store_true', type=bool, help="If true, all network weights will be trained")
+    parser.add_argument("--train_all", action='store_true', help="If true, all network weights will be trained")
     parser.add_argument("--suffix", default="", help="Suffix for the logger")
-    parser.add_argument("--nesterov", action='store_true', type=bool, help="Use nesterov")
+    parser.add_argument("--nesterov", action='store_true', help="Use nesterov")
     
     return parser.parse_args()
 
+
+
+logdir = "outputs/jigen"
+
+
+
+if not os.path.exists(logdir):
+    os.makedirs(logdir)
+logger = get_logger(os.path.join(logdir, 'trainandval.log'))
 
 # def compute_losses(net_output, jig_l, class_l):
 #     return F.cross_entropy(net_output[0], jig_l), F.cross_entropy(net_output[1], class_l)
@@ -112,16 +140,26 @@ class Trainer:
 
             loss.backward()
             self.optimizer.step()
+            logger.info(" jigsaw_loss " + str(jigsaw_loss.item()) + " class_loss " + str(class_loss.item()) + " jigsaw prediction " + str(torch.sum(jig_pred == jig_l.data).item()) + " class prediction " + str(torch.sum(cls_pred == class_l.data).item()))
+            
+            # logger.info({"jigsaw": jigsaw_loss.item(), "class": class_loss.item()  # , "domain": domain_loss.item()
+            #                  },
+            #                 # ,"lambda": lambda_val},
+            #                 {"jigsaw": torch.sum(jig_pred == jig_l.data).item(),
+            #                  "class": torch.sum(cls_pred == class_l.data).item(),
+            #                  # "domain": torch.sum(domain_pred == d_idx.data).item()
+            #                  },
+            #                 data.shape[0])
 
-            self.logger.log(it, len(self.source_loader),
-                            {"jigsaw": jigsaw_loss.item(), "class": class_loss.item()  # , "domain": domain_loss.item()
-                             },
-                            # ,"lambda": lambda_val},
-                            {"jigsaw": torch.sum(jig_pred == jig_l.data).item(),
-                             "class": torch.sum(cls_pred == class_l.data).item(),
-                             # "domain": torch.sum(domain_pred == d_idx.data).item()
-                             },
-                            data.shape[0])
+            # self.logger.log(it, len(self.source_loader),
+            #                 {"jigsaw": jigsaw_loss.item(), "class": class_loss.item()  # , "domain": domain_loss.item()
+            #                  },
+            #                 # ,"lambda": lambda_val},
+            #                 {"jigsaw": torch.sum(jig_pred == jig_l.data).item(),
+            #                  "class": torch.sum(cls_pred == class_l.data).item(),
+            #                  # "domain": torch.sum(domain_pred == d_idx.data).item()
+            #                  },
+            #                 data.shape[0])
             del loss, class_loss, jigsaw_loss, jigsaw_logit, class_logit
 
         self.model.eval()
@@ -135,7 +173,9 @@ class Trainer:
                     jigsaw_correct, class_correct = self.do_test(loader)
                 jigsaw_acc = float(jigsaw_correct) / total
                 class_acc = float(class_correct) / total
-                self.logger.log_test(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
+                # logger.info(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
+                # self.logger.log_test(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
+                logger.info(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
                 self.results[phase][self.current_epoch] = class_acc
 
     def do_test(self, loader):
@@ -173,18 +213,20 @@ class Trainer:
         return jigsaw_correct, class_correct, single_correct
 
     def do_training(self):
-        self.logger = Logger(self.args, update_frequency=30)  # , "domain", "lambda"
+        # self.logger = Logger(self.args, update_frequency=30)  # , "domain", "lambda"
         self.results = {"val": torch.zeros(self.args.epochs), "test": torch.zeros(self.args.epochs)}
         for self.current_epoch in range(self.args.epochs):
             self.scheduler.step()
-            self.logger.new_epoch(self.scheduler.get_lr())
+            # self.logger.new_epoch(self.scheduler.get_lr())
             self._do_epoch()
         val_res = self.results["val"]
         test_res = self.results["test"]
         idx_best = val_res.argmax()
-        #print("Best val %g, corresponding test %g - best test: %g" % (val_res.max(), test_res[idx_best], test_res.max()))
-        self.logger.save_best(test_res[idx_best], test_res.max())
-        return self.logger, self.model
+        # print("Best val %g, corresponding test %g - best test: %g" % (val_res.max(), test_res[idx_best], test_res.max()))
+        # logger.log("BEST Validatation results: ", test_res[idx_best], test_res.max())
+        logger.info(test_res[idx_best], test_res.max())
+        # self.logger.save_best(test_res[idx_best], test_res.max())
+        return self.model
 
 
 def main():

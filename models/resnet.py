@@ -57,11 +57,12 @@ class ResNet(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x)
+        x4 = self.layer4(x)
 
-        x = self.avgpool(x)
+        x = self.avgpool(x4)
         x = x.view(x.size(0), -1)
-        return self.jigsaw_classifier(x), self.class_classifier(x)
+        return self.jigsaw_classifier(x), self.class_classifier(x), x4
+    
 
 
 def resnet18(pretrained=True, **kwargs):

@@ -93,8 +93,10 @@ class JigsawDataset(data.Dataset):
             data = tiles
         else:
             data = [tiles[self.permutations[order - 1][t]] for t in range(n_grids)]
-            
+            # breakpoint()
+        # print(data[0].shape)
         data = torch.stack(data, 0)
+        # breakpoint()
         return self.returnFunc(data), int(order), int(self.labels[index])
 
     def __len__(self):
