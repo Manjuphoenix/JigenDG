@@ -3,6 +3,7 @@ import argparse
 import torch
 from IPython.core.debugger import set_trace
 from torch import nn
+from torchvision import transforms
 import torch.nn.functional as func
 from data import data_helper
 from data.data_helper import available_datasets
@@ -55,6 +56,38 @@ def get_args():
     return parser.parse_args()
 
 
+# logdir = "outputs/jigen"
+
+
+
+# if not os.path.exists(args.folder_name):
+#     os.makedirs(logdir)
+# logger = get_logger(os.path.join(logdir, 'trainandval.log'))
+
+
+# Jigen transforms for target only...............
+# def get_train_transformers(args):
+#     img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale))]
+#     if args.random_horiz_flip > 0.0:
+#         img_tr.append(transforms.RandomHorizontalFlip(args.random_horiz_flip))
+#     if args.jitter > 0.0:
+#         img_tr.append(transforms.ColorJitter(brightness=args.jitter, contrast=args.jitter, saturation=args.jitter, hue=min(0.5, args.jitter)))
+
+#     tile_tr = []
+#     if args.tile_random_grayscale:
+#         tile_tr.append(transforms.RandomGrayscale(args.tile_random_grayscale))
+#     tile_tr = tile_tr + [transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+
+#     return transforms.Compose(img_tr), transforms.Compose(tile_tr)
+
+
+
+cls_loss_cummulative_list = []
+
+test_acc_list = []
+
+
+
 
 def get_logger(log_file):
     from logging import getLogger, FileHandler, StreamHandler, Formatter, DEBUG, INFO  # noqa
@@ -100,8 +133,10 @@ class Trainer:
         self.target_entropy = args.entropy_weight
         self.only_non_scrambled = args.classify_only_sane
         self.n_classes = args.n_classes
+        
+    
 
-    def _do_epoch(self, logger):
+    def _do_epoch(self, logger, cls_loss_cummulative):
         criterion = nn.CrossEntropyLoss()
         self.model.train()
         for it, (source_batch, target_batch) in enumerate(zip(self.source_loader, itertools.cycle(self.target_jig_loader))):
@@ -127,6 +162,7 @@ class Trainer:
                 class_loss = criterion(class_logit[jig_l == 0], class_l[jig_l == 0])
             else:
                 class_loss = criterion(class_logit, class_l)
+                cls_loss_cummulative += class_loss.item()
             _, cls_pred = class_logit.max(dim=1)
             _, jig_pred = jigsaw_logit.max(dim=1)
 
@@ -151,21 +187,21 @@ class Trainer:
             #                 data.shape[0])
             old_loss = loss
             del loss, class_loss, jigsaw_loss, jigsaw_logit, class_logit, target_jigsaw_logit, target_jigsaw_loss
-
-
+        
+        print("cls_loss_cummulative", cls_loss_cummulative, "-------------------------------")
+        cls_loss_cummulative_list.append(cls_loss_cummulative)
+        
+        
         self.model.eval()
         torch.save({
+            'cls_loss_cummulative': cls_loss_cummulative,
             'epoch': self.current_epoch,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'loss': old_loss,
             # Add other relevant information if needed
             }, str(self.args.folder_name)+'/epoch'+str(self.current_epoch)+".pth")
-        
-
         del old_loss
-        
-
         with torch.no_grad():
             for phase, loader in self.test_loaders.items():
                 print(phase, "----------------")
@@ -180,15 +216,38 @@ class Trainer:
                 class_acc = float(class_correct) / total
                 string_jigsaw_acc = str(jigsaw_acc)
                 string_class_acc = str(class_acc)
+                string_cls_loss_cummulative = str(cls_loss_cummulative)
+                
                 # logger.info(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
-                logger.info(phase + " jigsaw accuracy" + string_jigsaw_acc + " classfication accuracy " + string_class_acc)
+                if phase=="test":
+                    test_acc_list.append(class_acc)
                 # self.logger.log_test(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
                 self.results[phase][self.current_epoch] = class_acc
+                # print("Val Results", self.results[phase][self.current_epoch])
+                min_idx = 0
+                min_loss = 10000
+                for it, loss in enumerate(cls_loss_cummulative_list):
+                    if loss < min_loss:
+                        min_loss = loss
+                        min_idx = it
+                if phase=="test":
+                    print(min_idx, min_loss, test_acc_list[min_idx])
+                    print("epoch no: ", str(min_idx), " Phase: ", str(phase), " jigsaw ", str(min_loss), " class ", str(test_acc_list[min_idx]))
+                    logger.info("epoch no: ", str(min_idx), " Phase: ", str(phase), " jigsaw ", str(min_loss), " class ", str(test_acc_list[min_idx]))
+                    
+                logger.info(phase + " jigsaw " + string_jigsaw_acc + " class " + string_class_acc)
+                # min_cls_train_loss, min_index = min(enumerate(cls_loss_cummulative_list), key=lambda x: x[1])
+                # print(min_index, "**************")
+                # test_acc_best_loss = test_acc_list[int(min_index)]
+                # print("Min Train loss: ", min_cls_train_loss, " Best train accuracy: ", test_acc_best_loss)
+                # logger.info("Min Train loss: ", min_cls_train_loss, " Best train accuracy: ", test_acc_best_loss)
+                
 
     def do_test(self, loader):
         jigsaw_correct = 0
         class_correct = 0
         domain_correct = 0
+        # print(self.current_epoch)
         for it, ((data, jig_l, class_l), _) in enumerate(loader):
             data, jig_l, class_l = data.to(self.device), jig_l.to(self.device), class_l.to(self.device)
             jigsaw_logit, class_logit, _ = self.model(data)
@@ -196,29 +255,33 @@ class Trainer:
             _, jig_pred = jigsaw_logit.max(dim=1)
             class_correct += torch.sum(cls_pred == class_l.data)
             jigsaw_correct += torch.sum(jig_pred == jig_l.data)
+        # save_model = self.model()
+        # torch.save(save_model.state_dict(), "./outputs/source_only_clean_code_run2/epoch"+str(self.current_epoch)+".pth")
         return jigsaw_correct, class_correct
-
+    
+    cls_loss_cummulative_list = []
+    
     def do_training(self, logger):
         # self.logger = Logger(self.args, update_frequency=30)  # , "domain", "lambda"
         self.results = {"val": torch.zeros(self.args.epochs), "test": torch.zeros(self.args.epochs)}
         for self.current_epoch in range(self.args.epochs):
+            cls_loss_cummulative = 0
+            
             self.scheduler.step()
             # self.logger.new_epoch(self.scheduler.get_lr())
-            self._do_epoch(logger)
+            self._do_epoch(logger, cls_loss_cummulative)
+            
         val_res = self.results["val"]
         test_res = self.results["test"]
         idx_best = val_res.argmax()
-
         string_val_result_max = str(val_res.max())
-        string_test_result_max = str(test_res.max())
         string_test_result_p_ind = str(test_res[idx_best])
-
+        string_test_result_max = str(test_res.max())
+        
         logger.info("Val result max:" + string_val_result_max + "Test resolution" + string_test_result_p_ind + string_test_result_max)
-        # print("Best val %g, corresponding test %g - best test: %g" % (string_val_result_max, string_test_result_p_ind, string_test_result_max))
-
-        # print("Best val %g, corresponding test %g - best test: %g" % (val_res.max(), test_res[idx_best], test_res.max()))
+        print("Best val %g, corresponding test %g - best test: %g" % (string_val_result_max, string_test_result_p_ind, string_test_result_max))
         # self.logger.save_best(test_res[idx_best], test_res.max())
-        return self.model
+        return  self.model
 
 
 def main():

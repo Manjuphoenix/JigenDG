@@ -3,7 +3,9 @@ from os.path import join, dirname
 import torch
 import os
 from torch.utils.data import DataLoader
-from torchvision import transforms
+from torchvision import datasets, transforms
+import torchvision
+
 
 from data import StandardDataset
 from data.JigsawLoader import JigsawDataset, JigsawTestDataset, get_split_dataset_info, _dataset_info, JigsawTestDatasetMultiple
@@ -88,13 +90,22 @@ def get_train_dataloader(args, patches):
                               patches=patches, jig_classes=args.jigsaw_n_classes))
     dataset = ConcatDataset(datasets)
     val_dataset = ConcatDataset(val_datasets)
-    weight = make_weight_for_balanced_classes(dataset.imgs, len(dataset.classes))
+
+    pre_process = transforms.Compose([transforms.Resize((222, 222)),
+                                      transforms.ToTensor(),
+                                      transforms.Normalize(
+                                        mean=(0.5776, 0.5776, 0.5776),
+                                        std=(0.1319, 0.1319, 0.1319))])
+    mscoco_dataset = torchvision.datasets.ImageFolder(root="/home/wirin/manjunath/uda/dataset_dir/uda_data/mscoco2/val/",
+                                        transform=pre_process)
+    # breakpoint()
+    weight = make_weight_for_balanced_classes(mscoco_dataset.imgs, len(mscoco_dataset.classes))
     weight=torch.DoubleTensor(weight)
 
-    sampler = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
+    sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
 
-    loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler=sampler, num_workers=16, pin_memory=True, drop_last=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=16, pin_memory=True, drop_last=False)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
     return loader, val_loader
 
 
