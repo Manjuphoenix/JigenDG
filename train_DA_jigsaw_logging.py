@@ -85,6 +85,7 @@ def get_args():
 cls_loss_cummulative_list = []
 
 test_acc_list = []
+string_test_acc_list = []
 
 
 
@@ -221,6 +222,7 @@ class Trainer:
                 # logger.info(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
                 if phase=="test":
                     test_acc_list.append(class_acc)
+                    string_test_acc_list.append(str(class_acc))
                 # self.logger.log_test(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
                 self.results[phase][self.current_epoch] = class_acc
                 # print("Val Results", self.results[phase][self.current_epoch])
@@ -230,10 +232,19 @@ class Trainer:
                     if loss < min_loss:
                         min_loss = loss
                         min_idx = it
+
+                if phase=="test":
+                    string_min_idx = str(min_idx)
+                    string_phase = str(phase)
+                    string_min_loss = str(min_loss)
+                    string_test_acc_list[min_idx] = str(test_acc_list[min_idx])
+
                 if phase=="test":
                     print(min_idx, min_loss, test_acc_list[min_idx])
-                    print("epoch no: ", str(min_idx), " Phase: ", str(phase), " jigsaw ", str(min_loss), " class ", str(test_acc_list[min_idx]))
-                    logger.info("epoch no: ", str(min_idx), " Phase: ", str(phase), " jigsaw ", str(min_loss), " class ", str(test_acc_list[min_idx]))
+                    print("epoch no: ", string_min_idx, " Phase: ", string_phase , " jigsaw ", string_min_loss, " class ", string_test_acc_list)
+                    # print("epoch no: ", str(min_idx), " Phase: ", str(phase), " jigsaw ", str(min_loss), " class ", str(test_acc_list[min_idx]))
+                    logger.info("epoch no: ", string_min_idx, " Phase: ", string_phase , " jigsaw ", string_min_loss, " class ", string_test_acc_list)
+                    # logger.info("epoch no: ", str(min_idx), " Phase: ", str(phase), " jigsaw ", str(min_loss), " class ", str(test_acc_list[min_idx]))
                     
                 logger.info(phase + " jigsaw " + string_jigsaw_acc + " class " + string_class_acc)
                 # min_cls_train_loss, min_index = min(enumerate(cls_loss_cummulative_list), key=lambda x: x[1])

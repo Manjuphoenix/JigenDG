@@ -71,6 +71,9 @@ def get_logger(log_file):
     logger.addHandler(sh)
     return logger
 
+cls_loss_cummulative_list = []
+no_of_itrs = 0
+
 
 def entropy_loss(x):
     return torch.sum(-func.softmax(x, 1) * func.log_softmax(x, 1), 1).mean()
@@ -101,7 +104,7 @@ class Trainer:
         self.only_non_scrambled = args.classify_only_sane
         self.n_classes = args.n_classes
 
-    def _do_epoch(self, logger):
+    def _do_epoch(self, logger, no_of_itrs, cls_loss_cummulative):
         criterion = nn.CrossEntropyLoss()
         self.model.train()
         for it, (source_batch, target_batch) in enumerate(zip(self.source_loader, itertools.cycle(self.target_jig_loader))):
@@ -127,8 +130,11 @@ class Trainer:
                 class_loss = criterion(class_logit[jig_l == 0], class_l[jig_l == 0])
             else:
                 class_loss = criterion(class_logit, class_l)
+                cls_loss_cummulative += class_loss.item()
             _, cls_pred = class_logit.max(dim=1)
             _, jig_pred = jigsaw_logit.max(dim=1)
+
+            
 
             loss = class_loss + jigsaw_loss * self.jig_weight + target_jigsaw_loss * self.target_weight + target_entropy_loss * self.target_entropy
             
@@ -139,8 +145,9 @@ class Trainer:
             
             loss.backward()
             self.optimizer.step()
+            no_of_itrs += 1
             if it%10==0:
-                logger.info(" jigsaw_loss " + string_jigsaw_loss + " class_loss " + string_class_loss + " jigsaw prediction " + string_jigprediction + " class prediction " + string_cls_prediction)
+                logger.info("Epoch no: " + str(self.current_epoch) + "," +  " jigsaw_loss " + string_jigsaw_loss + " class_loss " + string_class_loss + " jigsaw prediction " + string_jigprediction + " class prediction " + string_cls_prediction)
             
             # self.logger.log(it, len(self.source_loader),
             #                 {"jigsaw": jigsaw_loss.item(), "class": class_loss.item(), 
@@ -151,6 +158,9 @@ class Trainer:
             #                 data.shape[0])
             old_loss = loss
             del loss, class_loss, jigsaw_loss, jigsaw_logit, class_logit, target_jigsaw_logit, target_jigsaw_loss
+
+        # print("cls_loss_cummulative", cls_loss_cummulative, "-------------------------------", "Train classification loss: ", str(cls_loss_cummulative/no_of_itrs))
+        cls_loss_cummulative_list.append(cls_loss_cummulative)
 
 
         self.model.eval()
@@ -181,9 +191,10 @@ class Trainer:
                 string_jigsaw_acc = str(jigsaw_acc)
                 string_class_acc = str(class_acc)
                 # logger.info(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
-                logger.info(phase + " jigsaw accuracy" + string_jigsaw_acc + " classfication accuracy " + string_class_acc)
+                logger.info("Epoch no: " + str(self.current_epoch) + "," +  phase + " jigsaw accuracy" + string_jigsaw_acc + " classfication accuracy " + string_class_acc)
                 # self.logger.log_test(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
                 self.results[phase][self.current_epoch] = class_acc
+        return cls_loss_cummulative/no_of_itrs
 
     def do_test(self, loader):
         jigsaw_correct = 0
@@ -202,9 +213,14 @@ class Trainer:
         # self.logger = Logger(self.args, update_frequency=30)  # , "domain", "lambda"
         self.results = {"val": torch.zeros(self.args.epochs), "test": torch.zeros(self.args.epochs)}
         for self.current_epoch in range(self.args.epochs):
+            cls_loss_cummulative = 0
+            no_of_itrs = 0
             self.scheduler.step()
             # self.logger.new_epoch(self.scheduler.get_lr())
-            self._do_epoch(logger)
+            # src_train_cls_loss is to print the classification loss during training.....
+            src_train_cls_loss = self._do_epoch(logger, no_of_itrs, cls_loss_cummulative)
+            # print("Epoch no: " + self.current_epoch + "," + "Train classification loss: " + str(src_train_cls_loss))
+            logger.info("Epoch no: " + str(self.current_epoch) + "," +  " Train classification loss: " + str(src_train_cls_loss))
         val_res = self.results["val"]
         test_res = self.results["test"]
         idx_best = val_res.argmax()
