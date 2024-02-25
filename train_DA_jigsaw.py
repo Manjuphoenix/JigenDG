@@ -109,87 +109,88 @@ class Trainer:
 
     def _do_epoch(self, logger, no_of_itrs):
         criterion = nn.CrossEntropyLoss()
-        # self.model.train()
-        # for it, (source_batch, target_batch) in enumerate(zip(self.source_loader, itertools.cycle(self.target_jig_loader))):
-        #     (data, jig_l, class_l), d_idx = source_batch
-        #     data, jig_l, class_l, d_idx = data.to(self.device), jig_l.to(self.device), class_l.to(self.device), d_idx.to(self.device)
-        #     tdata, tjig_l, _ = target_batch
-        #     tdata, tjig_l = tdata.to(self.device), tjig_l.to(self.device)
+        self.model.train()
+        count = 0
+        for it, (source_batch, target_batch) in enumerate(zip(self.source_loader, itertools.cycle(self.target_jig_loader))):
+            (data, jig_l, class_l), d_idx = source_batch
+            data, jig_l, class_l, d_idx = data.to(self.device), jig_l.to(self.device), class_l.to(self.device), d_idx.to(self.device)
+            tdata, tjig_l, _ = target_batch
+            tdata, tjig_l = tdata.to(self.device), tjig_l.to(self.device)
 
-        #     self.optimizer.zero_grad()
+            self.optimizer.zero_grad()
 
-        #     # This is the source image and label passed to the common feature extractor
-        #     jigsaw_logit, class_logit, _ = self.model(data)
-        #     # jig_l is the class label for each patch and jigsaw_logit is the predicted class label and jigsaw_loss is the classification loss
-        #     jigsaw_loss = criterion(jigsaw_logit, jig_l)
+            # This is the source image and label passed to the common feature extractor
+            jigsaw_logit, class_logit, _ = self.model(data)
+            # jig_l is the class label for each patch and jigsaw_logit is the predicted class label and jigsaw_loss is the classification loss
+            jigsaw_loss = criterion(jigsaw_logit, jig_l)
             
-        #     # This is the target image and label passed to the common feature extractor
-        #     target_jigsaw_logit, target_class_logit, _ = self.model(tdata)
-        #     target_jigsaw_loss = criterion(target_jigsaw_logit, tjig_l)
+            # This is the target image and label passed to the common feature extractor
+            target_jigsaw_logit, target_class_logit, _ = self.model(tdata)
+            target_jigsaw_loss = criterion(target_jigsaw_logit, tjig_l)
             
-        #     # Softmax loss loss function
-        #     target_entropy_loss = entropy_loss(target_class_logit[tjig_l==0])
-        #     if self.only_non_scrambled:
-        #         class_loss = criterion(class_logit[jig_l == 0], class_l[jig_l == 0])
-        #     else:
-        #         class_loss = criterion(class_logit, class_l)
-        #         # cls_loss_cummulative += class_loss.item()
-        #     _, cls_pred = class_logit.max(dim=1)
-        #     _, jig_pred = jigsaw_logit.max(dim=1)
+            # Softmax loss loss function
+            target_entropy_loss = entropy_loss(target_class_logit[tjig_l==0])
+            if self.only_non_scrambled:
+                class_loss = criterion(class_logit[jig_l == 0], class_l[jig_l == 0])
+            else:
+                class_loss = criterion(class_logit, class_l)
+                # cls_loss_cummulative += class_loss.item()
+            _, cls_pred = class_logit.max(dim=1)
+            _, jig_pred = jigsaw_logit.max(dim=1)
 
             
 
-        #     loss = class_loss + jigsaw_loss * self.jig_weight + target_jigsaw_loss * self.target_weight + target_entropy_loss * self.target_entropy
+            loss = class_loss + jigsaw_loss * self.jig_weight + target_jigsaw_loss * self.target_weight + target_entropy_loss * self.target_entropy
             
-        #     string_jigsaw_loss = str(jigsaw_loss.item())
-        #     string_class_loss  = str(class_loss.item())
-        #     string_jigprediction = str(torch.sum(jig_pred == jig_l.data).item())
-        #     string_cls_prediction = str(torch.sum(cls_pred == class_l.data).item())
+            string_jigsaw_loss = str(jigsaw_loss.item())
+            string_class_loss  = str(class_loss.item())
+            string_jigprediction = str(torch.sum(jig_pred == jig_l.data).item())
+            string_cls_prediction = str(torch.sum(cls_pred == class_l.data).item())
             
-        #     loss.backward()
-        #     if class_loss.item()<self.meta_thresh:
-        #         class_loss.zero_()
-        #         self.optimizer.step()
-        #         print("Skipping update for this step")
-        #     else:
-        #         print(string_class_loss, "HENCE not skipping................")
-        #         self.optimizer.step()
-        #     no_of_itrs += 1
-        #     if it%10==0:
-        #         logger.info("Epoch no: " + str(self.current_epoch) + "," +  " jigsaw_loss " + string_jigsaw_loss + " class_loss " + string_class_loss + " jigsaw prediction " + string_jigprediction + " class prediction " + string_cls_prediction)
+            loss.backward()
+            if class_loss.item()<self.meta_thresh:
+                class_loss.zero_()
+                self.optimizer.step()
+                print("Skipping update for this step")
+            else:
+                print(string_class_loss, "HENCE not skipping................")
+                self.optimizer.step()
+            no_of_itrs += 1
+            if it%10==0:
+                logger.info("Epoch no: " + str(self.current_epoch) + "," +  " jigsaw_loss " + string_jigsaw_loss + " class_loss " + string_class_loss + " jigsaw prediction " + string_jigprediction + " class prediction " + string_cls_prediction)
             
-        #     # self.logger.log(it, len(self.source_loader),
-        #     #                 {"jigsaw": jigsaw_loss.item(), "class": class_loss.item(), 
-        #     #                  "t_jigsaw": target_jigsaw_loss.item(), "entropy": target_entropy_loss.item()},
-        #     #                 {"jigsaw": torch.sum(jig_pred == jig_l.data).item(),
-        #     #                  "class": torch.sum(cls_pred == class_l.data).item(),
-        #     #                  },
-        #     #                 data.shape[0])
-        #     old_loss = loss
-        #     del loss, class_loss, jigsaw_loss, jigsaw_logit, class_logit, target_jigsaw_logit, target_jigsaw_loss
+            # self.logger.log(it, len(self.source_loader),
+            #                 {"jigsaw": jigsaw_loss.item(), "class": class_loss.item(), 
+            #                  "t_jigsaw": target_jigsaw_loss.item(), "entropy": target_entropy_loss.item()},
+            #                 {"jigsaw": torch.sum(jig_pred == jig_l.data).item(),
+            #                  "class": torch.sum(cls_pred == class_l.data).item(),
+            #                  },
+            #                 data.shape[0])
+            old_loss = loss
+            count += 1
+            del loss, class_loss, jigsaw_loss, jigsaw_logit, class_logit, target_jigsaw_logit, target_jigsaw_loss
 
-        # # print("cls_loss_cummulative", cls_loss_cummulative, "-------------------------------", "Train classification loss: ", str(cls_loss_cummulative/no_of_itrs))
-        # # cls_loss_cummulative_list.append(cls_loss_cummulative)
+        # print("cls_loss_cummulative", cls_loss_cummulative, "-------------------------------", "Train classification loss: ", str(cls_loss_cummulative/no_of_itrs))
+        # cls_loss_cummulative_list.append(cls_loss_cummulative)
 
 
-        # self.model.eval()
-        # torch.save({
-        #     'epoch': self.current_epoch,
-        #     'model_state_dict': self.model.state_dict(),
-        #     'optimizer_state_dict': self.optimizer.state_dict(),
-        #     'loss': old_loss,
-        #     # Add other relevant information if needed
-        #     }, str(self.args.folder_name)+'/epoch'+str(self.current_epoch)+".pth")
+        self.model.eval()
+        torch.save({
+            'epoch': self.current_epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'loss': old_loss,
+            # Add other relevant information if needed
+            }, str(self.args.folder_name)+'/epoch'+str(self.current_epoch)+".pth")
         
 
-        # del old_loss
+        del old_loss
         
 
         # For loading checkpoint and inferencing................
-        model = self.model
-        checkpoint = torch.load("./outputs/jigen-polylr-lr-001-metacognition-02-run2/epoch14.pth")
-        model.load_state_dict(checkpoint['model_state_dict'])
-        
+        # model = self.model
+        # checkpoint = torch.load("./outputs/jigen-polylr-lr-001-metacognition-02-run2/epoch0.pth")
+        # model.load_state_dict(checkpoint['model_state_dict'])
 
         with torch.no_grad():
             for phase, loader in self.test_loaders.items():
@@ -201,13 +202,13 @@ class Trainer:
                     print("Single vs multi: %g %g" % (float(single_acc) / total, float(class_correct) / total))
                 else:
                     jigsaw_correct, class_correct = self.do_test(loader, logger, phase)
-                jigsaw_acc = float(jigsaw_correct) / total
+                # jigsaw_acc = float(jigsaw_correct) / total
                 class_acc = float(class_correct) / total
-                string_jigsaw_acc = str(jigsaw_acc)
-                string_class_acc = str(class_acc)
-                string_current_eph = str(self.current_epoch)
-                # logger.info(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
-                logger.info("Epoch no: " + string_current_eph + "," +  phase + " jigsaw accuracy" + string_jigsaw_acc + " classfication accuracy " + string_class_acc)
+                # string_jigsaw_acc = str(jigsaw_acc)
+                # string_class_acc = str(class_acc)
+                # string_current_eph = str(self.current_epoch)
+                # # logger.info(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
+                # logger.info("Epoch no: " + string_current_eph + "," +  phase + " jigsaw accuracy" + string_jigsaw_acc + " classfication accuracy " + string_class_acc)
                 # self.logger.log_test(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
                 self.results[phase][self.current_epoch] = class_acc
 
@@ -216,11 +217,22 @@ class Trainer:
         class_correct = 0
         total_loss = 0
         total_cls_loss = 0.0
+        total_cls_acc = 0.0
         count = 0
-        if phase=="test":
+        classes = ["bicycle", "car", "person"]
+        class_correct_list = list(0. for i in range(3))
+        class_total = list(0. for i in range(3))
+        c = []
+        if phase=="test":       # This is the test dataloader part
             for it, ((data, jig_l, class_l), _) in enumerate(loader):
                 data, jig_l, class_l = data.to(self.device), jig_l.to(self.device), class_l.to(self.device)
                 jigsaw_logit, class_logit, _ = self.model(data)
+                _, test_predicted = torch.max(class_logit, 1)
+                c = (test_predicted==class_l).squeeze()
+                for i in range(3):
+                    label = class_l[i]
+                    class_correct_list[label] += c[i].item()
+                    class_total[label] += 1
                 criterion = nn.CrossEntropyLoss()
                 class_loss = criterion(class_logit, class_l)
                 total_loss += class_loss.item()
@@ -231,13 +243,49 @@ class Trainer:
                 jigsaw_correct += torch.sum(jig_pred == jig_l.data).item()
                 val_cls_loss = total_loss/len(loader.dataset)
                 total_cls_loss = total_cls_loss + val_cls_loss
-                string_val_cls_loss = str(val_cls_loss)
-                string_val_class_acc = str(class_correct/len(loader.dataset))
-                print(total_cls_loss, val_cls_loss)
+                val_class_acc = class_correct/len(loader.dataset)
+                total_cls_acc += val_class_acc
+                # print(total_cls_loss, val_cls_loss)
                 count+=1
-                # logger.info("Val Classification loss: " + string_val_cls_loss+" Val Accuracy: " + string_val_class_acc)
-            print("Final loss: ", total_cls_loss/count, "**************", total_cls_loss,  "----------------", count)
-        # print(HEY)
+                # if it%10==0:
+                #     logger.info("Test accuracy: " + str(total_cls_acc/count) + " Test loss: " + str(total_cls_loss/count), " " +  " Iterations count " + str(count))
+
+
+        else:       # This is the validataion dataloader part
+            for it, ((data, jig_l, class_l), _) in enumerate(loader):
+                data, jig_l, class_l = data.to(self.device), jig_l.to(self.device), class_l.to(self.device)
+                jigsaw_logit, class_logit, _ = self.model(data)
+                _, val_predicted = torch.max(class_logit, 1)
+                c = (val_predicted==class_l).squeeze()
+                for i in range(3):
+                    label = class_l[i]
+                    class_correct_list[label] += c[i].item()
+                    class_total[label] += 1
+                criterion = nn.CrossEntropyLoss()
+                class_loss = criterion(class_logit, class_l)
+                total_loss += class_loss.item()
+
+                _, cls_pred = class_logit.max(dim=1)
+                _, jig_pred = jigsaw_logit.max(dim=1)
+                class_correct += torch.sum(cls_pred == class_l.data).item()
+                jigsaw_correct += torch.sum(jig_pred == jig_l.data).item()
+                val_cls_loss = total_loss/len(loader.dataset)
+                total_cls_loss = total_cls_loss + val_cls_loss
+                val_class_acc = class_correct/len(loader.dataset)
+                total_cls_acc += val_class_acc
+                # string_val_cls_loss = str(val_cls_loss)
+                # string_val_class_acc = str(class_correct/len(loader.dataset))
+                # print(total_cls_loss, val_cls_loss)
+                count+=1
+        test_accuracy = str(total_cls_acc/count)
+        test_loss = str(total_cls_loss/count)
+        string_count = str(count)
+        logger.info(phase + " accuracy: " + test_accuracy + " " + phase + " loss: " + test_loss + " " +  " Iterations count " + string_count)
+        # breakpoint()
+        for i in range(3):
+            if class_total[i] != 0:
+                print(phase + " accuracy of " + classes[i] + " is : " + str(class_correct_list[i]/class_total[i]))
+
         return jigsaw_correct, class_correct
 
     def do_training(self, logger):
