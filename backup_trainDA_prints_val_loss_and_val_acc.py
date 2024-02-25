@@ -24,7 +24,7 @@ def get_args():
     parser.add_argument("--image_size", type=int, default=225, help="Image size")
     # data aug stuff
     parser.add_argument("--min_scale", default=0.8, type=float, help="Minimum scale percent")
-    parser.add_argument("--max_scale", default=1.0, type=float, help="Maximum scale percent")
+    parser.add_argument("--max_scale", default=0.1, type=float, help="Maximum scale percent")
     parser.add_argument("--random_horiz_flip", type=float, default=0.0, help="Chance of random horizontal flip")
     parser.add_argument("--jitter", type=float, default=0.0, help="Color jitter amount")
     parser.add_argument("--tile_random_grayscale", type=float, default=0.1, help="Chance of randomly greyscaling a tile")
@@ -42,7 +42,7 @@ def get_args():
     parser.add_argument("--entropy_weight", type=float, default=0, help="Weight for target entropy")
     
     parser.add_argument("--tf_logger", type=bool, default=True, help="If true will save tensorboard compatible logs")
-    parser.add_argument("--val_size", type=float, default=0.1, help="Validation size (between 0 and 1)")
+    parser.add_argument("--val_size", type=float, default=1.0, help="Validation size (between 0 and 1)")
     parser.add_argument("--folder_name", default=None, help="Used by the logger to save logs")
     parser.add_argument("--bias_whole_image", default=None, type=float, help="If set, will bias the training procedure to show more often the whole image")
     parser.add_argument("--TTA", type=bool, default=False, help="Activate test time data augmentation")
@@ -168,7 +168,7 @@ class Trainer:
         # cls_loss_cummulative_list.append(cls_loss_cummulative)
         
         model = self.model
-        checkpoint = torch.load("./outputs/jigen-da-change-ls-poly-00005-logging-updated-run1/epoch0.pth")
+        checkpoint = torch.load("./outputs/jigen-polylr-lr-001-metacognition-02-run1/epoch0.pth")
         model.load_state_dict(checkpoint['model_state_dict'])
         # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # epoch = checkpoint['epoch']
@@ -214,7 +214,7 @@ class Trainer:
         domain_correct = 0
         total_loss = 0
         tota = len(loader.dataset)
-        breakpoint()
+        # breakpoint()
         for it, ((data, jig_l, class_l), _) in enumerate(loader):
             data, jig_l, class_l = data.to(self.device), jig_l.to(self.device), class_l.to(self.device)
             jigsaw_logit, class_logit, _ = self.model(data)

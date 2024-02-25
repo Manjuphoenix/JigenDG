@@ -17,7 +17,7 @@ svhn = 'svhn'
 synth = 'synth'
 usps = 'usps'
 
-da_setting_dataset = ["mscoco", "flir", "valmscoco", "cocobicycle", "cocoperson", "cococar", "flirbicycle", "flirperson", "flircar"]
+da_setting_dataset = ["mscoco", "flir", "valmscoco"]
 vlcs_datasets = ["CALTECH", "LABELME", "PASCAL", "SUN"]
 pacs_datasets = ["art_painting", "cartoon", "photo", "sketch"]
 office_datasets = ["amazon", "dslr", "webcam"]
@@ -69,8 +69,6 @@ class Subset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.indices)
 
-
-# This returns train and val dataloaders.....
 def get_train_dataloader(args, patches):
 
     name_person_num = 0
@@ -85,7 +83,10 @@ def get_train_dataloader(args, patches):
     img_transformer, tile_transformer = get_train_transformers(args)
     limit = args.limit_source
     for dname in dataset_list:
+        print(dname)
+        # breakpoint()
         name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', args.val_size)
+        print(name_train)
         for name_train_i in name_train:
             if 'person' in name_train_i:
                 name_person_num +=1
@@ -98,6 +99,7 @@ def get_train_dataloader(args, patches):
                 name_bicycle_num +=1
         train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
                                       tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
+        print(len(train_dataset), "dataset l")
         if limit:
             train_dataset = Subset(train_dataset, limit)
         datasets.append(train_dataset)
@@ -109,10 +111,24 @@ def get_train_dataloader(args, patches):
     print("car", name_car_num)
     print("name_person_num", name_person_num)
     dataset = ConcatDataset(datasets)
+    print(len(dataset), "l of dataset")
     val_dataset = ConcatDataset(val_datasets)
 
+    pre_process = transforms.Compose([transforms.Resize((222, 222)),
+                                      transforms.ToTensor(),
+                                      transforms.Normalize(
+                                        mean=(0.5776, 0.5776, 0.5776),
+                                        std=(0.1319, 0.1319, 0.1319))])
+    mscoco_dataset = torchvision.datasets.ImageFolder(root="/home/wirin/manjunath/uda/dataset_dir/uda_data/mscoco2/val/",
+                                        transform=pre_process)
+    print(len(mscoco_dataset), "mcoco dataset len for sampler")
+    print(mscoco_dataset.imgs[:10])
+    # print(mscoco_dataset.classes)
+    print(type(mscoco_dataset.imgs))
+    print(tuple_of_filename_class_list[:10])
+    # print(hye)
     # breakpoint()
-    weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))
+    weight = make_weight_for_balanced_classes(mscoco_dataset.imgs, mscoco_dataset.classes)
     weight=torch.DoubleTensor(weight)
 
     sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
