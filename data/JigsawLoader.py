@@ -4,6 +4,7 @@ import torch.utils.data as data
 import torchvision
 import torchvision.transforms as transforms
 from PIL import Image
+import cv2
 from random import sample, random
 
 
@@ -117,7 +118,14 @@ class JigsawTestDataset(JigsawDataset):
 
     def __getitem__(self, index):
         framename = self.data_path + '/' + self.names[index]
+        # img = cv2.imread(framename)
         img = Image.open(framename).convert('RGB')
+        # pil_img = Image.fromarray(np.uint8(framename)).convert('RGB')
+        # img = np.array(img)
+        # print(img)
+        # print(type(img))
+        # breakpoint()
+        # print(HEY)
         return self._image_transformer(img), 0, int(self.labels[index])
 
 

@@ -5,6 +5,12 @@ import os
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import torchvision
+from PIL import Image
+import cv2
+import numpy as np
+import random
+from torch import fft
+from PIL import Image
 
 
 from data import StandardDataset
@@ -26,6 +32,87 @@ available_datasets = office_datasets + pacs_datasets + vlcs_datasets + digits_da
 #office_paths = {dataset: "/home/enoon/data/images/office/%s" % dataset for dataset in office_datasets}
 #pacs_paths = {dataset: "/home/enoon/data/images/PACS/kfold/%s" % dataset for dataset in pacs_datasets}
 #vlcs_paths = {dataset: "/home/enoon/data/images/VLCS/%s/test" % dataset for dataset in pacs_datasets}
+
+class FFTforvarthreebands_lowband_reduce(object):
+    def __call__(self, inp):
+        inp = inp.cpu().detach()
+        low_pass = torch.ones(inp.shape[0], inp.shape[1], inp.shape[2])
+        fft_1 = torch.fft.fftshift(torch.fft.fftn(inp))
+        mid_x, mid_y = int(fft_1.shape[1]/2),int(fft_1.shape[2]/2)
+
+        pixel_x, pixel_y = torch.meshgrid(torch.arange(fft_1.shape[1]), torch.arange(fft_1.shape[2]))
+        distances = torch.sqrt((pixel_x - mid_x) ** 2 + (pixel_y - mid_y) ** 2)
+        thresh = inp.shape[1]/6
+        midthresh = thresh*2
+
+        condition = distances<midthresh ###SHOUDL BE < FOR THIS TO WORK!!!###
+        midcondition = distances<thresh
+        condition = condition.unsqueeze(0)
+        # print(condition.shape)
+        condition = condition.expand(inp.shape[0], inp.shape[1],inp.shape[2])
+        
+        # condition = condition.unsqueeze(0)
+        midcondition = midcondition.unsqueeze(0)
+        # print(condition.shape)
+        midcondition = midcondition.expand(inp.shape[0], inp.shape[1],inp.shape[2])
+        low_pass[midcondition] = 0
+        filtered_mid=torch.multiply(fft_1,low_pass)
+        absmid_1, angle_1 = torch.abs(filtered_mid), torch.angle(filtered_mid)
+        fft_1 = absmid_1*np.exp((1j) * angle_1)
+        fft_final = np.fft.ifftn(np.fft.ifftshift(fft_1))
+        fft_final = torch.Tensor(fft_final)
+        return fft_final
+
+class FFTforvarthreebands_highband_reduce(object):
+    def __call__(self, inp):
+        # inp = inp.cpu().detach()          # Uncomment this line if you want to add FFT as transformation by passing a batch of data
+        # Eg. inp size would be [30, 3, 224, 224] for a batch of 30 images
+        # low_pass = torch.zeros(inp.shape[0],inp.shape[1], inp.shape[2], inp.shape[3])
+        inp = np.array(inp)
+        mid_pass = torch.zeros(inp.shape[0], inp.shape[1], inp.shape[2])    # This is having 3 channel info only and no batch info--------------- 
+        # -----------------------since it is used as torch transformation
+        # high_pass = torch.ones(inp.shape[0],inp.shape[1], inp.shape[2], inp.shape[3])
+        mid_and_low_pass = torch.ones(inp.shape[0], inp.shape[1], inp.shape[2])
+        inp = torch.from_numpy(inp)
+        fft_1 = fft.fftshift(fft.fftn(inp))
+        fftnoshift_1 = fft.fftn(inp)
+        mid_x, mid_y = int(fft_1.shape[1]/2),int(fft_1.shape[2]/2)
+        pixel_x, pixel_y = torch.meshgrid(torch.arange(fft_1.shape[1]), torch.arange(fft_1.shape[2]))
+        distances = torch.sqrt((pixel_x - mid_x) ** 2 + (pixel_y - mid_y) ** 2)
+        thresh = inp.shape[1]/6
+        midthresh = thresh*2
+        condition = distances<midthresh ###SHOUDL BE < FOR THIS TO WORK!!!###
+        midcondition = distances<thresh
+        condition = condition.unsqueeze(0)
+        condition = condition.expand(inp.shape[0], inp.shape[1], inp.shape[2])
+        midcondition = midcondition.unsqueeze(0)
+        midcondition = midcondition.expand(inp.shape[0], inp.shape[1], inp.shape[2])
+        mid_pass[condition] = 1
+        mid_and_low_pass = mid_pass
+        filtered_mid=torch.multiply(fft_1,mid_and_low_pass)
+        absmid_1, angle_1 = torch.abs(filtered_mid), torch.angle(filtered_mid)
+        absmid_1 = absmid_1.cpu()
+        angle_1 = angle_1.cpu()
+        fft_1 = absmid_1*np.exp((1j) * angle_1)
+        fft_final = np.fft.ifftn(np.fft.ifftshift(fft_1))
+        fft_final = Image.fromarray(fft_final.astype('uint8'), 'RGB')
+        return fft_final
+
+
+
+class Canny(object):
+    def __call__(self, inp):
+        inp = np.array(inp)
+        t_lower = 50
+        t_upper = 200
+        aperture_size = 5
+        # img = inp.cpu().detach().numpy()
+        canny_img = cv2.Canny(inp, t_lower, t_upper, 
+                 apertureSize = aperture_size)
+        cv2.imwrite("after_canny.jpg", canny_img)
+        canny_img =  Image.fromarray(np.uint8(canny_img)).convert('RGB')
+        # canny_img_tensor = torch.Tensor(canny_img)
+        return canny_img
 
 
 def make_weight_for_balanced_classes(images, nclasses):
@@ -153,7 +240,7 @@ def get_jigsaw_val_dataloader(args, patches=False):
 
 def get_train_transformers(args):
     # img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale)), transforms.Grayscale(num_output_channels=3)]
-    img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale))]
+    img_tr = [FFTforvarthreebands_highband_reduce() ,transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale))]
     
     if args.random_horiz_flip > 0.0:
         img_tr.append(transforms.RandomHorizontalFlip(args.random_horiz_flip))
@@ -168,9 +255,20 @@ def get_train_transformers(args):
     return transforms.Compose(img_tr), transforms.Compose(tile_tr)
 
 
+# def get_val_transformer(args):
+#     p = random.random()
+#     if p < 0.5:
+#         img_tr = [Canny() ,transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(),
+#                 transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+#         return transforms.Compose(img_tr)
+#     else:
+#         img_tr = [transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(),
+#                 transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+#         return transforms.Compose(img_tr)
+    
 def get_val_transformer(args):
     img_tr = [transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(),
-              transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+                transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
     return transforms.Compose(img_tr)
 
 
