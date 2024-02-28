@@ -61,7 +61,7 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x4)
         x = x.view(x.size(0), -1)
-        return self.jigsaw_classifier(x), self.class_classifier(x), x4
+        return self.jigsaw_classifier(x), self.class_classifier(x)
     
 
 

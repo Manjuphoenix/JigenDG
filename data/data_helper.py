@@ -23,7 +23,9 @@ svhn = 'svhn'
 synth = 'synth'
 usps = 'usps'
 
-da_setting_dataset = ["mscoco", "flir", "valmscoco", "cocobicycle", "cocoperson", "cococar", "flirbicycle", "flirperson", "flircar"]
+da_setting_dataset = ["mscoco", "flir", "m3fd", "m3fdbus", "m3fdcar", "m3fdlamp", 
+                      "m3fdmotorcycle", "m3fdpeople", "m3fdtruck",
+                       "valmscoco", "cocobicycle", "cocoperson", "cococar", "flirbicycle", "flirperson", "flircar"]
 vlcs_datasets = ["CALTECH", "LABELME", "PASCAL", "SUN"]
 pacs_datasets = ["art_painting", "cartoon", "photo", "sketch"]
 office_datasets = ["amazon", "dslr", "webcam"]
@@ -255,16 +257,6 @@ def get_train_transformers(args):
     return transforms.Compose(img_tr), transforms.Compose(tile_tr)
 
 
-# def get_val_transformer(args):
-#     p = random.random()
-#     if p < 0.5:
-#         img_tr = [Canny() ,transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(),
-#                 transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
-#         return transforms.Compose(img_tr)
-#     else:
-#         img_tr = [transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(),
-#                 transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
-#         return transforms.Compose(img_tr)
     
 def get_val_transformer(args):
     img_tr = [transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(),
@@ -274,6 +266,8 @@ def get_val_transformer(args):
 
 def get_target_jigsaw_loader(args):
     img_transformer, tile_transformer = get_train_transformers(args)
+    img_transformer.transforms.insert(1, FFTforvarthreebands_highband_reduce())
+    tile_transformer.transforms.insert(1, FFTforvarthreebands_highband_reduce())
     name_train, _, labels_train, _ = get_split_dataset_info(join(dirname(__file__), 'txt_lists', '%s_train.txt' % args.target), 0)
     dataset = JigsawDataset(name_train, labels_train, patches=False, img_transformer=img_transformer,
                             tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
