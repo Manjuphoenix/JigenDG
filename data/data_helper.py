@@ -242,6 +242,7 @@ def get_jigsaw_val_dataloader(args, patches=False):
 
 def get_train_transformers(args):
     # img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale)), transforms.Grayscale(num_output_channels=3)]
+    # This was not changed for jigen fft code so the fft transform was applied to the tile of both source and target image
     img_tr = [FFTforvarthreebands_highband_reduce() ,transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale))]
     
     if args.random_horiz_flip > 0.0:
@@ -264,6 +265,7 @@ def get_val_transformer(args):
     return transforms.Compose(img_tr)
 
 
+# Even below that FFT was present during training which gave 93 percent mAP
 def get_target_jigsaw_loader(args):
     img_transformer, tile_transformer = get_train_transformers(args)
     img_transformer.transforms.insert(1, FFTforvarthreebands_highband_reduce())
