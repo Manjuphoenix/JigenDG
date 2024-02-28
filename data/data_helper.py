@@ -23,9 +23,9 @@ svhn = 'svhn'
 synth = 'synth'
 usps = 'usps'
 
-da_setting_dataset = ["mscoco", "flir", "m3fd", "m3fdbus", "m3fdcar", "m3fdlamp", 
+da_setting_dataset = ["mscoco", "mscoco2", "flir", "m3fd", "m3fdbus", "m3fdcar", "m3fdlamp", 
                       "m3fdmotorcycle", "m3fdpeople", "m3fdtruck",
-                       "valmscoco", "cocobicycle", "cocoperson", "cococar", "flirbicycle", "flirperson", "flircar"]
+                       "valmscoco", "valmscoco2", "cocobicycle", "cocoperson", "cococar", "flirbicycle", "flirperson", "flircar"]
 vlcs_datasets = ["CALTECH", "LABELME", "PASCAL", "SUN"]
 pacs_datasets = ["art_painting", "cartoon", "photo", "sketch"]
 office_datasets = ["amazon", "dslr", "webcam"]
@@ -159,12 +159,55 @@ class Subset(torch.utils.data.Dataset):
         return len(self.indices)
 
 
-# This returns train and val dataloaders.....
-def get_train_dataloader(args, patches):
+# This returns train and val dataloaders.....       THIS IS FOR FLIR
+# def get_train_dataloader(args, patches):
 
-    name_person_num = 0
+#     name_person_num = 0
+#     name_car_num = 0
+#     name_bicycle_num = 0
+#     tuple_of_filename_class_list = []
+
+#     dataset_list = args.source
+#     assert isinstance(dataset_list, list)
+#     datasets = []
+#     val_datasets = []
+#     img_transformer, tile_transformer = get_train_transformers(args)
+#     limit = args.limit_source
+#     for dname in dataset_list:
+#         name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', args.val_size)
+#         for name_train_i in name_train:
+#             if 'person' in name_train_i:
+#                 name_person_num +=1
+#                 tuple_of_filename_class_list.append((name_train_i,2))
+#             if 'car' in name_train_i:
+#                 tuple_of_filename_class_list.append((name_train_i,1))
+#                 name_car_num +=1
+#             if 'bicycle' in name_train_i:
+#                 tuple_of_filename_class_list.append((name_train_i,0))
+#                 name_bicycle_num +=1
+#         train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
+#                                       tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
+#         if limit:
+#             train_dataset = Subset(train_dataset, limit)
+#         datasets.append(train_dataset)
+#         val_datasets.append(
+#             JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
+#                               patches=patches, jig_classes=args.jigsaw_n_classes))
+    
+#     print("bicycle", name_bicycle_num)
+#     print("car", name_car_num)
+#     print("name_person_num", name_person_num)
+#     dataset = ConcatDataset(datasets)
+#     val_dataset = ConcatDataset(val_datasets)
+
+
+def get_train_dataloader(args, patches):
+    name_bus_num = 0
     name_car_num = 0
-    name_bicycle_num = 0
+    name_lamp_num = 0
+    name_motor_num = 0
+    name_people_num = 0
+    name_truck_num = 0
     tuple_of_filename_class_list = []
 
     dataset_list = args.source
@@ -176,15 +219,24 @@ def get_train_dataloader(args, patches):
     for dname in dataset_list:
         name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', args.val_size)
         for name_train_i in name_train:
-            if 'person' in name_train_i:
-                name_person_num +=1
-                tuple_of_filename_class_list.append((name_train_i,2))
+            if 'bus' in name_train_i:
+                name_bus_num +=1
+                tuple_of_filename_class_list.append((name_train_i,0))
             if 'car' in name_train_i:
                 tuple_of_filename_class_list.append((name_train_i,1))
                 name_car_num +=1
-            if 'bicycle' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,0))
-                name_bicycle_num +=1
+            if 'lamp' in name_train_i:
+                tuple_of_filename_class_list.append((name_train_i,2))
+                name_lamp_num +=1
+            if 'motorcycle' in name_train_i:
+                name_motor_num +=1
+                tuple_of_filename_class_list.append((name_train_i,3))
+            if 'people' in name_train_i:
+                tuple_of_filename_class_list.append((name_train_i,4))
+                name_people_num +=1
+            if 'truck' in name_train_i:
+                tuple_of_filename_class_list.append((name_train_i,5))
+                name_truck_num +=1
         train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
                                       tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
         if limit:
@@ -194,14 +246,19 @@ def get_train_dataloader(args, patches):
             JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
                               patches=patches, jig_classes=args.jigsaw_n_classes))
     
-    print("bicycle", name_bicycle_num)
+    print("bus", name_bus_num)
     print("car", name_car_num)
-    print("name_person_num", name_person_num)
+    print("lamp", name_lamp_num)
+    print('motorcycle', name_motor_num)
+    print('people', name_people_num)
+    print('truck', name_truck_num)
     dataset = ConcatDataset(datasets)
     val_dataset = ConcatDataset(val_datasets)
 
     # breakpoint()
-    weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))
+    # weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))  # for flir
+
+    weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bus', 'car', 'lamp', 'motorcycle', 'people', 'truck']))   # for m3fd
     weight=torch.DoubleTensor(weight)
 
     sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
