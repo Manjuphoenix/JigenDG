@@ -13,7 +13,19 @@ import numpy as np
 import os
 import itertools
 import argparse
+import random
+import cv2
+import matplotlib.pyplot as plt
 
+
+# seed = 2
+# torch.manual_seed(seed)
+# torch.cuda.manual_seed(seed)
+# torch.cuda.manual_seed_all(seed)
+# np.random.seed(seed)
+# random.seed(seed)
+
+# cv2.imwrite("try5.png", data.squeeze(0).cpu().detach().permute(1,2,0).numpy()*255)
 
 
 def get_args():
@@ -72,6 +84,7 @@ def get_logger(log_file):
     return logger
     
 
+
 def entropy_loss(x):
     return torch.sum(-func.softmax(x, 1) * func.log_softmax(x, 1), 1).mean()
 
@@ -109,6 +122,8 @@ class Trainer:
             data, jig_l, class_l, d_idx = data.to(self.device), jig_l.to(self.device), class_l.to(self.device), d_idx.to(self.device)
             tdata, tjig_l, _ = target_batch
             tdata, tjig_l = tdata.to(self.device), tjig_l.to(self.device)
+            # cv2.imwrite("try5.png", tdata.squeeze(0).cpu().detach().permute(1,2,0).numpy()*255)
+            breakpoint()
 
             self.optimizer.zero_grad()
 
@@ -130,7 +145,6 @@ class Trainer:
             string_class_loss  = str(class_loss.item())
             string_jigprediction = str(torch.sum(jig_pred == jig_l.data).item())
             string_cls_prediction = str(torch.sum(cls_pred == class_l.data).item())
-            
 
             if it%10==0:
                 logger.info("Epoch no: " + str(self.current_epoch) + "," +  " jigsaw_loss " + string_jigsaw_loss + " class_loss " + string_class_loss + " jigsaw prediction " + string_jigprediction + " class prediction " + string_cls_prediction)
@@ -145,11 +159,10 @@ class Trainer:
             #                  "class": torch.sum(cls_pred == class_l.data).item(),
             #                  },
             #                 data.shape[0])
+            
             old_loss = loss
             del loss, class_loss, jigsaw_loss, jigsaw_logit, class_logit, target_jigsaw_logit, target_jigsaw_loss
-
-        
-        torch.save({
+            torch.save({
             'epoch': self.current_epoch,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
@@ -158,6 +171,7 @@ class Trainer:
             }, str(self.args.folder_name)+'/epoch'+str(self.current_epoch)+".pth")
         
         del old_loss
+
 
         self.model.eval()
         with torch.no_grad():
@@ -170,8 +184,6 @@ class Trainer:
                     jigsaw_correct, class_correct = self.do_test(loader, logger, phase)
                 jigsaw_acc = float(jigsaw_correct) / total
                 class_acc = float(class_correct) / total
-                # self.logger.log_test(phase, {"jigsaw": jigsaw_acc, "class": class_acc})
-                # self.results[phase][self.current_epoch] = class_acc
 
     def do_test(self, loader, logger, phase):
 
@@ -185,15 +197,18 @@ class Trainer:
         total_loss = 0
         total_cls_loss = 0.0
         total_cls_acc = 0.0
-        classes = ["bicycle", "car", "person"]
-        class_correct_list = list(0. for i in range(3))
-        class_total = list(0. for i in range(3))
+        # classes = ["bicycle", "car", "person"]        # For FLIR
+        # class_correct_list = list(0. for i in range(3))
+        # class_total = list(0. for i in range(3))
+        classes = ['bus', 'car', 'lamp', 'motorcycle', 'people', 'truck']           # For M3fd
+        class_correct_list = list(0. for i in range(6))
+        class_total = list(0. for i in range(6))
         c = []
         
         if phase=="test":       # This is the test dataloader part
             for it, ((data, jig_l, class_l), _) in enumerate(loader):
                 data, jig_l, class_l = data.to(self.device), jig_l.to(self.device), class_l.to(self.device)
-                jigsaw_logit, class_logit = self.model(data)
+                jigsaw_logit, class_logit, _ = self.model(data)
                 _, test_predicted = torch.max(class_logit, 1)
                 c = (test_predicted==class_l).squeeze()
                 for i in range(data.size(0)):
@@ -210,14 +225,6 @@ class Trainer:
                 jigsaw_correct += torch.sum(jig_pred == jig_l.data).item()
                 val_cls_loss = total_loss/len(loader.dataset)
                 val_class_acc = class_correct/len(loader.dataset)
-                # for i in range(3):
-                #     if class_total[i] != 0:
-                #         # print(phase + " accuracy of " + classes[i] + " is : " + str(class_correct_list[i]/class_total[i]))
-                #         logger.info(phase + " accuracy of " + classes[i] + " is : " + str(class_correct_list[i]/class_total[i]))
-                # print(total_cls_loss, val_cls_loss)
-                # if it%10==0:
-                #     logger.info("Test accuracy: " + str(total_cls_acc/count) + " Test loss: " + str(total_cls_loss/count), " " +  " Iterations count " + str(count))
-
 
         else:       # This is the validataion dataloader part
             for it, ((data, jig_l, class_l), _) in enumerate(loader):
@@ -253,12 +260,13 @@ class Trainer:
         # if it%10==0:
         #     logger.info(phase + " accuracy: " + test_accuracy + " " + phase + " loss: " + test_loss)
         # breakpoint()
-        for i in range(3):
+        for i in range(6):
             if class_total[i] != 0:
                 # print(phase + " accuracy of " + classes[i] + " is : " + str(class_correct_list[i]/class_total[i]))
                 logger.info(phase + " accuracy of " + classes[i] + " is : " + str(class_correct_list[i]/class_total[i]))
 
         return jigsaw_correct, class_correct
+    
 
     def do_training(self, logger):
         self.results = {"val": torch.zeros(self.args.epochs), "test": torch.zeros(self.args.epochs)}
@@ -276,8 +284,6 @@ class Trainer:
         
         return self.model
 
-
-
 def main():
     args = get_args()
     print("STARTS/.........:)")
@@ -288,6 +294,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     trainer = Trainer(args, device)
     trainer.do_training(logger)
+
 
 
 if __name__ == "__main__":

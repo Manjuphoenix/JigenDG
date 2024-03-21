@@ -23,7 +23,7 @@ svhn = 'svhn'
 synth = 'synth'
 usps = 'usps'
 
-da_setting_dataset = ["mscoco", "mscoco2", "flir", "m3fd", "m3fdbus", "m3fdcar", "m3fdlamp", 
+da_setting_dataset = ["mscoco", "mscoco2", "flir", "m3fd", "m3fdvi", "m3fdbus", "m3fdcar", "m3fdlamp", 
                       "m3fdmotorcycle", "m3fdpeople", "m3fdtruck",
                        "valmscoco", "valmscoco2", "cocobicycle", "cocoperson", "cococar", "flirbicycle", "flirperson", "flircar"]
 vlcs_datasets = ["CALTECH", "LABELME", "PASCAL", "SUN"]
@@ -209,15 +209,17 @@ def get_train_dataloader(args, patches):
     name_people_num = 0
     name_truck_num = 0
     tuple_of_filename_class_list = []
-
     dataset_list = args.source
     assert isinstance(dataset_list, list)
     datasets = []
     val_datasets = []
     img_transformer, tile_transformer = get_train_transformers(args)
     limit = args.limit_source
+    train_list = []
     for dname in dataset_list:
         name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', args.val_size)
+        # print(name_train[0], "-------------------", name_val[0])
+        # print(HEY)
         for name_train_i in name_train:
             if 'bus' in name_train_i:
                 name_bus_num +=1
@@ -301,15 +303,16 @@ def get_train_transformers(args):
     # img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale)), transforms.Grayscale(num_output_channels=3)]
     img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale))]
     
-    if args.random_horiz_flip > 0.0:
-        img_tr.append(transforms.RandomHorizontalFlip(args.random_horiz_flip))
-    if args.jitter > 0.0:
-        img_tr.append(transforms.ColorJitter(brightness=args.jitter, contrast=args.jitter, saturation=args.jitter, hue=min(0.5, args.jitter)))
+    # if args.random_horiz_flip > 0.0:
+    #     img_tr.append(transforms.RandomHorizontalFlip(args.random_horiz_flip))
+    # if args.jitter > 0.0:
+    #     img_tr.append(transforms.ColorJitter(brightness=args.jitter, contrast=args.jitter, saturation=args.jitter, hue=min(0.5, args.jitter)))
 
-    tile_tr = []
-    if args.tile_random_grayscale:
-        tile_tr.append(transforms.RandomGrayscale(args.tile_random_grayscale))
-    tile_tr = tile_tr + [transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+    tile_tr = [transforms.ToTensor()]
+    # if args.tile_random_grayscale:
+    #     tile_tr.append(transforms.RandomGrayscale(args.tile_random_grayscale))
+    # tile_tr = tile_tr + [transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+    # tile_tr.append(transforms.ToTensor())
 
     return transforms.Compose(img_tr), transforms.Compose(tile_tr)
 

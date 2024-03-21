@@ -167,6 +167,7 @@ class Trainer:
             _, cls_pred = class_logit.max(dim=1)
             _, jig_pred = jigsaw_logit.max(dim=1)
 
+            ################## jigen_weight=0.7, target_weight = 0, entropy_weight = 0 #################################
             loss = class_loss + jigsaw_loss * self.jig_weight + target_jigsaw_loss * self.target_weight + target_entropy_loss * self.target_entropy
             
             string_jigsaw_loss = str(jigsaw_loss.item())
