@@ -18,12 +18,12 @@ import cv2
 import matplotlib.pyplot as plt
 
 
-# seed = 2
-# torch.manual_seed(seed)
-# torch.cuda.manual_seed(seed)
-# torch.cuda.manual_seed_all(seed)
-# np.random.seed(seed)
-# random.seed(seed)
+seed = 2
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+np.random.seed(seed)
+random.seed(seed)
 
 # cv2.imwrite("try5.png", data.squeeze(0).cpu().detach().permute(1,2,0).numpy()*255)
 
@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 def get_args():
     parser = argparse.ArgumentParser(description="Script to launch jigsaw training", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--source", choices=available_datasets, help="Source", nargs='+')
+    parser.add_argument("--val", choices=available_datasets, help="Source Validation", nargs='+')
     parser.add_argument("--target", choices=available_datasets, help="Target")
     parser.add_argument("--batch_size", "-b", type=int, default=64, help="Batch size")
     parser.add_argument("--image_size", type=int, default=225, help="Image size")
@@ -100,7 +101,11 @@ class Trainer:
             k = args.source.index(args.target)
             args.source = args.source[:k] + args.source[k + 1:]
             print("Source: %s" % args.source)
-        self.source_loader, self.val_loader = data_helper.get_train_dataloader(args, patches=model.is_patch_based())
+        # self.source_loader, self.val_loader = data_helper.get_train_dataloader(args, patches=model.is_patch_based())            # Old setting
+        ###################### New train and validation dataloaders added ##############################
+        self.source_loader = data_helper.get_train_dataloader(args, patches=model.is_patch_based()) 
+        self.val_loader = data_helper.get_train_val_dataloader(args, patches=model.is_patch_based())
+        ##################################################################################################
         self.target_jig_loader = data_helper.get_target_jigsaw_loader(args)
         self.target_loader = data_helper.get_val_dataloader(args, patches=model.is_patch_based())
         self.test_loaders = {"val": self.val_loader, "test": self.target_loader}
@@ -123,7 +128,7 @@ class Trainer:
             tdata, tjig_l, _ = target_batch
             tdata, tjig_l = tdata.to(self.device), tjig_l.to(self.device)
             # cv2.imwrite("try5.png", tdata.squeeze(0).cpu().detach().permute(1,2,0).numpy()*255)
-            breakpoint()
+            # breakpoint()
 
             self.optimizer.zero_grad()
 
@@ -208,7 +213,7 @@ class Trainer:
         if phase=="test":       # This is the test dataloader part
             for it, ((data, jig_l, class_l), _) in enumerate(loader):
                 data, jig_l, class_l = data.to(self.device), jig_l.to(self.device), class_l.to(self.device)
-                jigsaw_logit, class_logit, _ = self.model(data)
+                jigsaw_logit, class_logit = self.model(data)
                 _, test_predicted = torch.max(class_logit, 1)
                 c = (test_predicted==class_l).squeeze()
                 for i in range(data.size(0)):

@@ -25,7 +25,7 @@ class ConcatDataset(Dataset):           # This is called while loading the train
             l = len(e)
             r.append(l + s)              # r will hold the total length of the entire dataset be it train or test......
             s += l
-            print("E: ", e, " L: ", l, " R: ", r, " S: ", s, "----------------------------------")
+            # print("E: ", e, " L: ", l, " R: ", r, " S: ", s, "----------------------------------")
         return r
 
     def isMulti(self):
@@ -33,6 +33,7 @@ class ConcatDataset(Dataset):           # This is called while loading the train
 
     def __init__(self, datasets):
         super(ConcatDataset, self).__init__()
+        # print("----------------------------", datasets)
         assert len(datasets) > 0, 'datasets should not be an empty iterable'
         self.datasets = list(datasets)
         self.cumulative_sizes = self.cumsum(self.datasets)          # This holds the total size of train, val and test dataset...........
@@ -41,7 +42,7 @@ class ConcatDataset(Dataset):           # This is called while loading the train
         return self.cumulative_sizes[-1]
 
     def __getitem__(self, idx):
-        print(self.cumulative_sizes, "**********************88")
+        # print(self.cumulative_sizes, "**********************88")
         dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)           # dataset_idx holds the information of if the dataset is for trian (0) or validation (1) or testing (2)...
         # print(self.cumulative_sizes, "cummulative sizes", idx, dataset_idx, "idx and dataset_idx................")
         if dataset_idx == 0:

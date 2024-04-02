@@ -1,12 +1,20 @@
 from os.path import join, dirname
-import os
 
 import torch
+import os
 from torch.utils.data import DataLoader
-from torchvision import transforms
+from torchvision import datasets, transforms
+import torchvision
+from PIL import Image
+import cv2
+import numpy as np
+import random
+from torch import fft
+from PIL import Image
+
 
 from data import StandardDataset
-from data.JigsawLoader import JigsawDataset, JigsawTestDataset, get_split_dataset_info, _dataset_info, JigsawTestDatasetMultiple
+from data._JigsawLoader import JigsawDataset, JigsawTestDataset, get_split_dataset_info, _dataset_info, JigsawTestDatasetMultiple
 from data.concat_dataset import ConcatDataset
 
 mnist = 'mnist'
@@ -26,7 +34,87 @@ available_datasets = office_datasets + pacs_datasets + vlcs_datasets + digits_da
 #office_paths = {dataset: "/home/enoon/data/images/office/%s" % dataset for dataset in office_datasets}
 #pacs_paths = {dataset: "/home/enoon/data/images/PACS/kfold/%s" % dataset for dataset in pacs_datasets}
 #vlcs_paths = {dataset: "/home/enoon/data/images/VLCS/%s/test" % dataset for dataset in pacs_datasets}
-#paths = {**office_paths, **pacs_paths, **vlcs_paths}
+
+class FFTforvarthreebands_lowband_reduce(object):
+    def __call__(self, inp):
+        inp = inp.cpu().detach()
+        low_pass = torch.ones(inp.shape[0], inp.shape[1], inp.shape[2])
+        fft_1 = torch.fft.fftshift(torch.fft.fftn(inp))
+        mid_x, mid_y = int(fft_1.shape[1]/2),int(fft_1.shape[2]/2)
+
+        pixel_x, pixel_y = torch.meshgrid(torch.arange(fft_1.shape[1]), torch.arange(fft_1.shape[2]))
+        distances = torch.sqrt((pixel_x - mid_x) ** 2 + (pixel_y - mid_y) ** 2)
+        thresh = inp.shape[1]/6
+        midthresh = thresh*2
+
+        condition = distances<midthresh ###SHOUDL BE < FOR THIS TO WORK!!!###
+        midcondition = distances<thresh
+        condition = condition.unsqueeze(0)
+        # print(condition.shape)
+        condition = condition.expand(inp.shape[0], inp.shape[1],inp.shape[2])
+        
+        # condition = condition.unsqueeze(0)
+        midcondition = midcondition.unsqueeze(0)
+        # print(condition.shape)
+        midcondition = midcondition.expand(inp.shape[0], inp.shape[1],inp.shape[2])
+        low_pass[midcondition] = 0
+        filtered_mid=torch.multiply(fft_1,low_pass)
+        absmid_1, angle_1 = torch.abs(filtered_mid), torch.angle(filtered_mid)
+        fft_1 = absmid_1*np.exp((1j) * angle_1)
+        fft_final = np.fft.ifftn(np.fft.ifftshift(fft_1))
+        fft_final = torch.Tensor(fft_final)
+        return fft_final
+
+class FFTforvarthreebands_highband_reduce(object):
+    def __call__(self, inp):
+        # inp = inp.cpu().detach()          # Uncomment this line if you want to add FFT as transformation by passing a batch of data
+        # Eg. inp size would be [30, 3, 224, 224] for a batch of 30 images
+        # low_pass = torch.zeros(inp.shape[0],inp.shape[1], inp.shape[2], inp.shape[3])
+        inp = np.array(inp)
+        mid_pass = torch.zeros(inp.shape[0], inp.shape[1], inp.shape[2])    # This is having 3 channel info only and no batch info--------------- 
+        # -----------------------since it is used as torch transformation
+        # high_pass = torch.ones(inp.shape[0],inp.shape[1], inp.shape[2], inp.shape[3])
+        mid_and_low_pass = torch.ones(inp.shape[0], inp.shape[1], inp.shape[2])
+        inp = torch.from_numpy(inp)
+        fft_1 = fft.fftshift(fft.fftn(inp))
+        fftnoshift_1 = fft.fftn(inp)
+        mid_x, mid_y = int(fft_1.shape[1]/2),int(fft_1.shape[2]/2)
+        pixel_x, pixel_y = torch.meshgrid(torch.arange(fft_1.shape[1]), torch.arange(fft_1.shape[2]))
+        distances = torch.sqrt((pixel_x - mid_x) ** 2 + (pixel_y - mid_y) ** 2)
+        thresh = inp.shape[1]/6
+        midthresh = thresh*2
+        condition = distances<midthresh ###SHOUDL BE < FOR THIS TO WORK!!!###
+        midcondition = distances<thresh
+        condition = condition.unsqueeze(0)
+        condition = condition.expand(inp.shape[0], inp.shape[1], inp.shape[2])
+        midcondition = midcondition.unsqueeze(0)
+        midcondition = midcondition.expand(inp.shape[0], inp.shape[1], inp.shape[2])
+        mid_pass[condition] = 1
+        mid_and_low_pass = mid_pass
+        filtered_mid=torch.multiply(fft_1,mid_and_low_pass)
+        absmid_1, angle_1 = torch.abs(filtered_mid), torch.angle(filtered_mid)
+        absmid_1 = absmid_1.cpu()
+        angle_1 = angle_1.cpu()
+        fft_1 = absmid_1*np.exp((1j) * angle_1)
+        fft_final = np.fft.ifftn(np.fft.ifftshift(fft_1))
+        fft_final = Image.fromarray(fft_final.astype('uint8'), 'RGB')
+        return fft_final
+
+
+
+class Canny(object):
+    def __call__(self, inp):
+        inp = np.array(inp)
+        t_lower = 50
+        t_upper = 200
+        aperture_size = 5
+        # img = inp.cpu().detach().numpy()
+        canny_img = cv2.Canny(inp, t_lower, t_upper, 
+                 apertureSize = aperture_size)
+        cv2.imwrite("after_canny.jpg", canny_img)
+        canny_img =  Image.fromarray(np.uint8(canny_img)).convert('RGB')
+        # canny_img_tensor = torch.Tensor(canny_img)
+        return canny_img
 
 
 def make_weight_for_balanced_classes(images, nclasses):
@@ -41,7 +129,7 @@ def make_weight_for_balanced_classes(images, nclasses):
     for idx, val in enumerate(images):
         weight[idx] = weight_per_class[val[1]]
     return weight
-
+#paths = {**office_paths, **pacs_paths, **vlcs_paths}
 
 dataset_std = {mnist: (0.30280363, 0.30280363, 0.30280363),
                mnist_m: (0.2384788, 0.22375608, 0.24496263),
@@ -74,9 +162,9 @@ class Subset(torch.utils.data.Dataset):
 # This returns train and val dataloaders.....       THIS IS FOR FLIR
 # def get_train_dataloader(args, patches):
 
-    # name_person_num = 0
-    # name_car_num = 0
-    # name_bicycle_num = 0
+#     name_person_num = 0
+#     name_car_num = 0
+#     name_bicycle_num = 0
 #     tuple_of_filename_class_list = []
 
 #     dataset_list = args.source
@@ -112,90 +200,6 @@ class Subset(torch.utils.data.Dataset):
 #     dataset = ConcatDataset(datasets)
 #     val_dataset = ConcatDataset(val_datasets)
 
-##########--------------------- FLIR loaders ----------------------------################
-
-# def get_train_dataloader(args, patches):
-#     name_person_num = 0
-#     name_car_num = 0
-#     name_bicycle_num = 0
-#     tuple_of_filename_class_list = []
-#     dataset_list = args.source
-#     assert isinstance(dataset_list, list)
-#     datasets = []
-#     val_datasets = []
-#     img_transformer, tile_transformer = get_train_transformers(args)
-#     limit = args.limit_source
-#     for dname in dataset_list:
-#         name_train, _, labels_train, _ = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', 0)
-#         for name_train_i in name_train:
-#             if 'person' in name_train_i:
-#                 name_person_num +=1
-#                 tuple_of_filename_class_list.append((name_train_i,2))
-#             if 'car' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,1))
-#                 name_car_num +=1
-#             if 'bicycle' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,0))
-#                 name_bicycle_num +=1
-#         train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
-#                                       tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
-#         if limit:
-#             train_dataset = Subset(train_dataset, limit)
-#         datasets.append(train_dataset)
-#     print("bicycle", name_bicycle_num)
-#     print("car", name_car_num)
-#     print("person", name_person_num)
-#     dataset = ConcatDataset(datasets)
-#     weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))   # for flir
-#     weight=torch.DoubleTensor(weight)
-
-#     sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
-
-#     loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
-#     return loader
-
-
-
-# def get_train_val_dataloader(args, patches):
-#     name_person_num = 0
-#     name_car_num = 0
-#     name_bicycle_num = 0
-#     tuple_of_filename_class_list = []
-#     dataset_list = args.source
-#     assert isinstance(dataset_list, list)
-#     # datasets = []
-#     val_datasets = []
-#     for dname in dataset_list:
-#         name_val, _, labels_val, _ = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_validation.txt', 0)
-#         # print(name_train[0], "-------------------", name_val[0])
-#         # print(HEY)
-#         for name_train_i in name_val:
-#             if 'person' in name_train_i:
-#                 name_person_num +=1
-#                 tuple_of_filename_class_list.append((name_train_i,2))
-#             if 'car' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,1))
-#                 name_car_num +=1
-#             if 'bicycle' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,0))
-#                 name_bicycle_num +=1
-#         val_datasets.append(
-#             JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
-#                               patches=patches, jig_classes=args.jigsaw_n_classes))
-#     print("Validation bicycle", name_bicycle_num)
-#     print("Validation car", name_car_num)
-#     print("Validation person", name_person_num)
-#     val_dataset = ConcatDataset(val_datasets)
-#     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-#     return val_loader
-
-
-
-########################################################################################################
-
-
-
-################******************** M3FD loaders ******************************#########################
 
 def get_train_dataloader(args, patches):
     name_bus_num = 0
@@ -211,8 +215,9 @@ def get_train_dataloader(args, patches):
     val_datasets = []
     img_transformer, tile_transformer = get_train_transformers(args)
     limit = args.limit_source
+    train_list = []
     for dname in dataset_list:
-        name_train, _, labels_train, _ = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', 0)
+        name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', args.val_size)
         # print(name_train[0], "-------------------", name_val[0])
         # print(HEY)
         for name_train_i in name_train:
@@ -239,74 +244,6 @@ def get_train_dataloader(args, patches):
         if limit:
             train_dataset = Subset(train_dataset, limit)
         datasets.append(train_dataset)
-        # val_datasets.append(
-        #     JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
-        #                       patches=patches, jig_classes=args.jigsaw_n_classes))
-    
-    print("bus", name_bus_num)
-    print("car", name_car_num)
-    print("lamp", name_lamp_num)
-    print('motorcycle', name_motor_num)
-    print('people', name_people_num)
-    print('truck', name_truck_num)
-    dataset = ConcatDataset(datasets)
-    # val_dataset = ConcatDataset(val_datasets)
-
-    # breakpoint()
-    # weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))  # for flir
-
-    weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bus', 'car', 'lamp', 'motorcycle', 'people', 'truck']))   # for m3fd
-    weight=torch.DoubleTensor(weight)
-
-    sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
-
-    loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
-    # val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-    return loader
-
-
-def get_train_val_dataloader(args, patches):
-    name_bus_num = 0
-    name_car_num = 0
-    name_lamp_num = 0
-    name_motor_num = 0
-    name_people_num = 0
-    name_truck_num = 0
-    tuple_of_filename_class_list = []
-    dataset_list = args.source
-    assert isinstance(dataset_list, list)
-    # datasets = []
-    val_datasets = []
-    img_transformer, tile_transformer = get_train_transformers(args)
-    limit = args.limit_source
-    for dname in dataset_list:
-        name_val, _, labels_val, _ = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_validation.txt', 0)
-        # print(name_train[0], "-------------------", name_val[0])
-        # print(HEY)
-        for name_train_i in name_val:
-            if 'bus' in name_train_i:
-                name_bus_num +=1
-                tuple_of_filename_class_list.append((name_train_i,0))
-            if 'car' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,1))
-                name_car_num +=1
-            if 'lamp' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,2))
-                name_lamp_num +=1
-            if 'motorcycle' in name_train_i:
-                name_motor_num +=1
-                tuple_of_filename_class_list.append((name_train_i,3))
-            if 'people' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,4))
-                name_people_num +=1
-            if 'truck' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,5))
-                name_truck_num +=1
-        # train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
-        #                               tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
-        # if limit:
-        #     train_dataset = Subset(train_dataset, limit)
-        # datasets.append(train_dataset)
         val_datasets.append(
             JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
                               patches=patches, jig_classes=args.jigsaw_n_classes))
@@ -317,27 +254,21 @@ def get_train_val_dataloader(args, patches):
     print('motorcycle', name_motor_num)
     print('people', name_people_num)
     print('truck', name_truck_num)
-    # dataset = ConcatDataset(datasets)
+    dataset = ConcatDataset(datasets)
     val_dataset = ConcatDataset(val_datasets)
 
     # breakpoint()
     # weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))  # for flir
 
-    # weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bus', 'car', 'lamp', 'motorcycle', 'people', 'truck']))   # for m3fd
-    # weight=torch.DoubleTensor(weight)
+    weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bus', 'car', 'lamp', 'motorcycle', 'people', 'truck']))   # for m3fd
+    weight=torch.DoubleTensor(weight)
 
-    # sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
+    sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
 
-    # loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-    # return loader, val_loader
-    return val_loader
+    return loader, val_loader
 
-####################################################################################################################
-
-
-
-    
 
 
 def get_val_dataloader(args, patches=False):
@@ -369,28 +300,34 @@ def get_jigsaw_val_dataloader(args, patches=False):
 
 
 def get_train_transformers(args):
+    # img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale)), transforms.Grayscale(num_output_channels=3)]
     img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale))]
-    if args.random_horiz_flip > 0.0:
-        img_tr.append(transforms.RandomHorizontalFlip(args.random_horiz_flip))
-    if args.jitter > 0.0:
-        img_tr.append(transforms.ColorJitter(brightness=args.jitter, contrast=args.jitter, saturation=args.jitter, hue=min(0.5, args.jitter)))
+    
+    # if args.random_horiz_flip > 0.0:
+    #     img_tr.append(transforms.RandomHorizontalFlip(args.random_horiz_flip))
+    # if args.jitter > 0.0:
+    #     img_tr.append(transforms.ColorJitter(brightness=args.jitter, contrast=args.jitter, saturation=args.jitter, hue=min(0.5, args.jitter)))
 
-    tile_tr = []
-    if args.tile_random_grayscale:
-        tile_tr.append(transforms.RandomGrayscale(args.tile_random_grayscale))
-    tile_tr = tile_tr + [transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+    tile_tr = [transforms.ToTensor()]
+    # if args.tile_random_grayscale:
+    #     tile_tr.append(transforms.RandomGrayscale(args.tile_random_grayscale))
+    # tile_tr = tile_tr + [transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+    # tile_tr.append(transforms.ToTensor())
 
     return transforms.Compose(img_tr), transforms.Compose(tile_tr)
 
 
+    
 def get_val_transformer(args):
     img_tr = [transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(),
-              transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+                transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
     return transforms.Compose(img_tr)
 
 
 def get_target_jigsaw_loader(args):
     img_transformer, tile_transformer = get_train_transformers(args)
+    # img_transformer.transforms.insert(1, FFTforvarthreebands_highband_reduce())
+    # tile_transformer.transforms.insert(1, FFTforvarthreebands_highband_reduce())
     name_train, _, labels_train, _ = get_split_dataset_info(join(dirname(__file__), 'txt_lists', '%s_train.txt' % args.target), 0)
     dataset = JigsawDataset(name_train, labels_train, patches=False, img_transformer=img_transformer,
                             tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)

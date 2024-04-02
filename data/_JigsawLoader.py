@@ -4,6 +4,7 @@ import torch.utils.data as data
 import torchvision
 import torchvision.transforms as transforms
 from PIL import Image
+import cv2
 from random import sample, random
 
 
@@ -54,7 +55,7 @@ class JigsawDataset(data.Dataset):
         self.permutations = self.__retrieve_permutations(jig_classes)
         self.grid_size = 3
         self.bias_whole_image = bias_whole_image
-        if patches:
+        if patches:         # this wont happen..........
             self.patch_size = 64
         self._image_transformer = img_transformer
         self._augment_tile = tile_transformer
@@ -66,35 +67,60 @@ class JigsawDataset(data.Dataset):
             self.returnFunc = make_grid
 
     def get_tile(self, img, n):
-        w = float(img.size[0]) / self.grid_size
+        w = float(img.size[0]) / self.grid_size             # 222/3 i.e 74
         y = int(n / self.grid_size)
         x = n % self.grid_size
         tile = img.crop([x * w, y * w, (x + 1) * w, (y + 1) * w])
         tile = self._augment_tile(tile)
+        # print(img.size[0], n, self.grid_size, w, y, x, [x * w, y * w, (x + 1) * w, (y + 1) * w], tile.shape, "++++++++++++++++++++")
         return tile
     
     def get_image(self, index):
         framename = self.data_path + '/' + self.names[index]
         img = Image.open(framename).convert('RGB')
+        # tmp = np.asarray(img)         # This was to store the image for visualization.............
+        # cv2.imwrite("try_org.png", tmp)
         return self._image_transformer(img)
+    
+
+####################### new loader i.e, JUNK..............####################
+    # def get_image(self, indexes):
+    #     imgs = []
+    #     for i in indexes:
+    #         framename = self.data_path + '/' + self.names[i]
+    #         img = Image.open(framename).convert('RGB')
+    #         tmp = np.asarray(img)
+    #         imgs.append(tmp)            # list of numpy arrays which will be our images
+    #     # cv2.imwrite("try_org.png", tmp)
+    #     print(imgs, "************************88")
+    #     return self._image_transformer(imgs)
+    
+
         
     def __getitem__(self, index):
         img = self.get_image(index)
-        n_grids = self.grid_size ** 2
-        tiles = [None] * n_grids
+        n_grids = self.grid_size ** 2       # n_grids will be 9
+        tiles = [None] * n_grids            # tiles will have a list of len 9 with all none eg. [None, None, None, None, None, None, None, None, None]
         for n in range(n_grids):
             tiles[n] = self.get_tile(img, n)
 
         order = np.random.randint(len(self.permutations) + 1)  # added 1 for class 0: unsorted
+        # order = 0         # for verification
+        # print(order, "****************")         # for verification
+        # order = 1         # for verification
         if self.bias_whole_image:
             if self.bias_whole_image > random():
                 order = 0
         if order == 0:
+            # print(HWY)
             data = tiles
+            # print(len(tiles), tiles[1].shape)           # len is 9 and shape is torch.Size([3, 74, 74])
         else:
             data = [tiles[self.permutations[order - 1][t]] for t in range(n_grids)]
-            
+            # breakpoint()
+        # print(data[0].shape)
         data = torch.stack(data, 0)
+        # print(self.returnFunc(data), int(order), int(self.labels[index]), "-------------------")
         return self.returnFunc(data), int(order), int(self.labels[index])
 
     def __len__(self):
@@ -115,7 +141,14 @@ class JigsawTestDataset(JigsawDataset):
 
     def __getitem__(self, index):
         framename = self.data_path + '/' + self.names[index]
+        # img = cv2.imread(framename)
         img = Image.open(framename).convert('RGB')
+        # pil_img = Image.fromarray(np.uint8(framename)).convert('RGB')
+        # img = np.array(img)
+        # print(img)
+        # print(type(img))
+        # breakpoint()
+        # print(HEY)
         return self._image_transformer(img), 0, int(self.labels[index])
 
 

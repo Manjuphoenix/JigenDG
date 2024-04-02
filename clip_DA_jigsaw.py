@@ -165,8 +165,11 @@ class Trainer:
             k = args.source.index(args.target)
             args.source = args.source[:k] + args.source[k + 1:]
             print("Source: %s" % args.source)
-        self.model = self.clip.to(device)
-        self.source_loader, self.val_loader = data_helper.get_train_dataloader(args, patches=model.is_patch_based())
+        # self.source_loader, self.val_loader = data_helper.get_train_dataloader(args, patches=model.is_patch_based())            # Old setting
+        ###################### New train and validation dataloaders added ##############################
+        self.source_loader = data_helper.get_train_dataloader(args, patches=model.is_patch_based()) 
+        self.val_loader = data_helper.get_train_val_dataloader(args, patches=model.is_patch_based())
+        ##################################################################################################
         self.target_jig_loader = data_helper.get_target_jigsaw_loader(args)
         self.target_loader = data_helper.get_val_dataloader(args, patches=model.is_patch_based())
         self.test_loaders = {"val": self.val_loader, "test": self.target_loader}
@@ -179,19 +182,42 @@ class Trainer:
         self.target_entropy = args.entropy_weight
         self.only_non_scrambled = args.classify_only_sane
         self.n_classes = args.n_classes
-        self.cos_sim_list = cos_sim_list
-        self.cos_sim_ref_list = cos_sim_ref_list
+
+
+
+        # if args.target in args.source:
+        #     print("No need to include target in source, it is automatically done by this script")
+        #     k = args.source.index(args.target)
+        #     args.source = args.source[:k] + args.source[k + 1:]
+        #     print("Source: %s" % args.source)
+        # self.model = self.clip.to(device)
+        # self.source_loader, self.val_loader = data_helper.get_train_dataloader(args, patches=model.is_patch_based())
+        # self.target_jig_loader = data_helper.get_target_jigsaw_loader(args)
+        # self.target_loader = data_helper.get_val_dataloader(args, patches=model.is_patch_based())
+        # self.test_loaders = {"val": self.val_loader, "test": self.target_loader}
+        # self.len_dataloader = len(self.source_loader)
+        # print("Dataset size: train %d, target jig: %d, val %d, test %d" % (
+        #     len(self.source_loader.dataset), len(self.target_jig_loader.dataset), len(self.val_loader.dataset), len(self.target_loader.dataset)))
+        # self.optimizer, self.scheduler = get_optim_and_scheduler(model, args.epochs, args.learning_rate, args.train_all, nesterov=args.nesterov)
+        # self.jig_weight = args.jig_weight
+        # self.target_weight = args.target_weight
+        # self.target_entropy = args.entropy_weight
+        # self.only_non_scrambled = args.classify_only_sane
+        # self.n_classes = args.n_classes
+        # self.cos_sim_list = cos_sim_list
+        # self.cos_sim_ref_list = cos_sim_ref_list
 
     
 
 
     def _do_epoch(self, logger):
-        feat1 = torch.ones([64, 64, 111, 111])
+        # feat1 = torch.ones([64, 64, 111, 111])
         criterion = nn.CrossEntropyLoss()
         self.clip.train()
         self.clip = self.clip.to("cuda")
         pytorch_total_params = sum(p.numel() for p in self.clip.parameters() if p.requires_grad)
         print("Parameters: ", pytorch_total_params)
+        print(HEY)
         for it, (source_batch, target_batch) in enumerate(zip(self.source_loader, itertools.cycle(self.target_jig_loader))):
             (data, jig_l, class_l), d_idx = source_batch
             data, jig_l, class_l, d_idx = data.to(self.device), jig_l.to(self.device), class_l.to(self.device), d_idx.to(self.device)

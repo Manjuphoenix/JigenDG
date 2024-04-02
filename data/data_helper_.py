@@ -74,9 +74,9 @@ class Subset(torch.utils.data.Dataset):
 # This returns train and val dataloaders.....       THIS IS FOR FLIR
 # def get_train_dataloader(args, patches):
 
-    # name_person_num = 0
-    # name_car_num = 0
-    # name_bicycle_num = 0
+#     name_person_num = 0
+#     name_car_num = 0
+#     name_bicycle_num = 0
 #     tuple_of_filename_class_list = []
 
 #     dataset_list = args.source
@@ -112,90 +112,6 @@ class Subset(torch.utils.data.Dataset):
 #     dataset = ConcatDataset(datasets)
 #     val_dataset = ConcatDataset(val_datasets)
 
-##########--------------------- FLIR loaders ----------------------------################
-
-# def get_train_dataloader(args, patches):
-#     name_person_num = 0
-#     name_car_num = 0
-#     name_bicycle_num = 0
-#     tuple_of_filename_class_list = []
-#     dataset_list = args.source
-#     assert isinstance(dataset_list, list)
-#     datasets = []
-#     val_datasets = []
-#     img_transformer, tile_transformer = get_train_transformers(args)
-#     limit = args.limit_source
-#     for dname in dataset_list:
-#         name_train, _, labels_train, _ = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', 0)
-#         for name_train_i in name_train:
-#             if 'person' in name_train_i:
-#                 name_person_num +=1
-#                 tuple_of_filename_class_list.append((name_train_i,2))
-#             if 'car' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,1))
-#                 name_car_num +=1
-#             if 'bicycle' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,0))
-#                 name_bicycle_num +=1
-#         train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
-#                                       tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
-#         if limit:
-#             train_dataset = Subset(train_dataset, limit)
-#         datasets.append(train_dataset)
-#     print("bicycle", name_bicycle_num)
-#     print("car", name_car_num)
-#     print("person", name_person_num)
-#     dataset = ConcatDataset(datasets)
-#     weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))   # for flir
-#     weight=torch.DoubleTensor(weight)
-
-#     sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
-
-#     loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
-#     return loader
-
-
-
-# def get_train_val_dataloader(args, patches):
-#     name_person_num = 0
-#     name_car_num = 0
-#     name_bicycle_num = 0
-#     tuple_of_filename_class_list = []
-#     dataset_list = args.source
-#     assert isinstance(dataset_list, list)
-#     # datasets = []
-#     val_datasets = []
-#     for dname in dataset_list:
-#         name_val, _, labels_val, _ = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_validation.txt', 0)
-#         # print(name_train[0], "-------------------", name_val[0])
-#         # print(HEY)
-#         for name_train_i in name_val:
-#             if 'person' in name_train_i:
-#                 name_person_num +=1
-#                 tuple_of_filename_class_list.append((name_train_i,2))
-#             if 'car' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,1))
-#                 name_car_num +=1
-#             if 'bicycle' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,0))
-#                 name_bicycle_num +=1
-#         val_datasets.append(
-#             JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
-#                               patches=patches, jig_classes=args.jigsaw_n_classes))
-#     print("Validation bicycle", name_bicycle_num)
-#     print("Validation car", name_car_num)
-#     print("Validation person", name_person_num)
-#     val_dataset = ConcatDataset(val_datasets)
-#     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-#     return val_loader
-
-
-
-########################################################################################################
-
-
-
-################******************** M3FD loaders ******************************#########################
 
 def get_train_dataloader(args, patches):
     name_bus_num = 0
@@ -212,7 +128,7 @@ def get_train_dataloader(args, patches):
     img_transformer, tile_transformer = get_train_transformers(args)
     limit = args.limit_source
     for dname in dataset_list:
-        name_train, _, labels_train, _ = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', 0)
+        name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', 0)
         # print(name_train[0], "-------------------", name_val[0])
         # print(HEY)
         for name_train_i in name_train:
@@ -239,9 +155,9 @@ def get_train_dataloader(args, patches):
         if limit:
             train_dataset = Subset(train_dataset, limit)
         datasets.append(train_dataset)
-        # val_datasets.append(
-        #     JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
-        #                       patches=patches, jig_classes=args.jigsaw_n_classes))
+        val_datasets.append(
+            JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
+                              patches=patches, jig_classes=args.jigsaw_n_classes))
     
     print("bus", name_bus_num)
     print("car", name_car_num)
@@ -250,7 +166,7 @@ def get_train_dataloader(args, patches):
     print('people', name_people_num)
     print('truck', name_truck_num)
     dataset = ConcatDataset(datasets)
-    # val_dataset = ConcatDataset(val_datasets)
+    val_dataset = ConcatDataset(val_datasets)
 
     # breakpoint()
     # weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))  # for flir
@@ -261,8 +177,9 @@ def get_train_dataloader(args, patches):
     sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
 
     loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
-    # val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-    return loader
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+    return loader, val_loader
+
 
 
 def get_train_val_dataloader(args, patches):
@@ -275,15 +192,15 @@ def get_train_val_dataloader(args, patches):
     tuple_of_filename_class_list = []
     dataset_list = args.source
     assert isinstance(dataset_list, list)
-    # datasets = []
+    datasets = []
     val_datasets = []
     img_transformer, tile_transformer = get_train_transformers(args)
     limit = args.limit_source
     for dname in dataset_list:
-        name_val, _, labels_val, _ = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_validation.txt', 0)
+        name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_validataion.txt', 0)
         # print(name_train[0], "-------------------", name_val[0])
         # print(HEY)
-        for name_train_i in name_val:
+        for name_train_i in name_train:
             if 'bus' in name_train_i:
                 name_bus_num +=1
                 tuple_of_filename_class_list.append((name_train_i,0))
@@ -308,7 +225,7 @@ def get_train_val_dataloader(args, patches):
         #     train_dataset = Subset(train_dataset, limit)
         # datasets.append(train_dataset)
         val_datasets.append(
-            JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
+            JigsawTestDataset(name_train, labels_train, img_transformer=get_val_transformer(args),
                               patches=patches, jig_classes=args.jigsaw_n_classes))
     
     print("bus", name_bus_num)
@@ -332,12 +249,6 @@ def get_train_val_dataloader(args, patches):
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
     # return loader, val_loader
     return val_loader
-
-####################################################################################################################
-
-
-
-    
 
 
 def get_val_dataloader(args, patches=False):
