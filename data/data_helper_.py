@@ -1,9 +1,17 @@
 from os.path import join, dirname
-import os
 
 import torch
+import os
 from torch.utils.data import DataLoader
-from torchvision import transforms
+from torchvision import datasets, transforms
+import torchvision
+from PIL import Image
+import cv2
+import numpy as np
+import random
+from torch import fft
+from PIL import Image
+
 
 from data import StandardDataset
 from data.JigsawLoader import JigsawDataset, JigsawTestDataset, get_split_dataset_info, _dataset_info, JigsawTestDatasetMultiple
@@ -15,7 +23,7 @@ svhn = 'svhn'
 synth = 'synth'
 usps = 'usps'
 
-da_setting_dataset = ["mscoco", "mscoco2", "flir", "m3fd", "m3fdvi", "m3fdbus", "m3fdcar", "m3fdlamp", 
+da_setting_dataset = ["mscoco", "mscoco2", "flir", "m3fd", "m3fdbus", "m3fdcar", "m3fdlamp", 
                       "m3fdmotorcycle", "m3fdpeople", "m3fdtruck",
                        "valmscoco", "valmscoco2", "cocobicycle", "cocoperson", "cococar", "flirbicycle", "flirperson", "flircar"]
 vlcs_datasets = ["CALTECH", "LABELME", "PASCAL", "SUN"]
@@ -26,7 +34,6 @@ available_datasets = office_datasets + pacs_datasets + vlcs_datasets + digits_da
 #office_paths = {dataset: "/home/enoon/data/images/office/%s" % dataset for dataset in office_datasets}
 #pacs_paths = {dataset: "/home/enoon/data/images/PACS/kfold/%s" % dataset for dataset in pacs_datasets}
 #vlcs_paths = {dataset: "/home/enoon/data/images/VLCS/%s/test" % dataset for dataset in pacs_datasets}
-#paths = {**office_paths, **pacs_paths, **vlcs_paths}
 
 
 def make_weight_for_balanced_classes(images, nclasses):
@@ -41,7 +48,7 @@ def make_weight_for_balanced_classes(images, nclasses):
     for idx, val in enumerate(images):
         weight[idx] = weight_per_class[val[1]]
     return weight
-
+#paths = {**office_paths, **pacs_paths, **vlcs_paths}
 
 dataset_std = {mnist: (0.30280363, 0.30280363, 0.30280363),
                mnist_m: (0.2384788, 0.22375608, 0.24496263),
@@ -72,11 +79,64 @@ class Subset(torch.utils.data.Dataset):
 
 
 # This returns train and val dataloaders.....       THIS IS FOR FLIR
-# def get_train_dataloader(args, patches):
+def get_train_dataloader(args, patches):
 
-#     name_person_num = 0
+    name_person_num = 0
+    name_car_num = 0
+    name_bicycle_num = 0
+    tuple_of_filename_class_list = []
+
+    dataset_list = args.source
+    assert isinstance(dataset_list, list)
+    datasets = []
+    val_datasets = []
+    img_transformer, tile_transformer = get_train_transformers(args)
+    limit = args.limit_source
+    for dname in dataset_list:
+        name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', args.val_size)
+        for name_train_i in name_train:
+            if 'person' in name_train_i:
+                name_person_num +=1
+                tuple_of_filename_class_list.append((name_train_i,2))
+            if 'car' in name_train_i:
+                tuple_of_filename_class_list.append((name_train_i,1))
+                name_car_num +=1
+            if 'bicycle' in name_train_i:
+                tuple_of_filename_class_list.append((name_train_i,0))
+                name_bicycle_num +=1
+        train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
+                                      tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
+        if limit:
+            train_dataset = Subset(train_dataset, limit)
+        datasets.append(train_dataset)
+        val_datasets.append(
+            JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
+                              patches=patches, jig_classes=args.jigsaw_n_classes))
+    
+
+    print("bicycle", name_bicycle_num)
+    print("car", name_car_num)
+    print("person", name_person_num)
+    dataset = ConcatDataset(datasets)
+    val_dataset = ConcatDataset(val_datasets)
+    weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))   # for flir
+    weight=torch.DoubleTensor(weight)
+
+    sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
+
+    loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+    return loader, val_loader
+
+
+
+# def get_train_dataloader(args, patches):
+#     name_bus_num = 0
 #     name_car_num = 0
-#     name_bicycle_num = 0
+#     name_lamp_num = 0
+#     name_motor_num = 0
+#     name_people_num = 0
+#     name_truck_num = 0
 #     tuple_of_filename_class_list = []
 
 #     dataset_list = args.source
@@ -88,15 +148,24 @@ class Subset(torch.utils.data.Dataset):
 #     for dname in dataset_list:
 #         name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', args.val_size)
 #         for name_train_i in name_train:
-#             if 'person' in name_train_i:
-#                 name_person_num +=1
-#                 tuple_of_filename_class_list.append((name_train_i,2))
+#             if 'bus' in name_train_i:
+#                 name_bus_num +=1
+#                 tuple_of_filename_class_list.append((name_train_i,0))
 #             if 'car' in name_train_i:
 #                 tuple_of_filename_class_list.append((name_train_i,1))
 #                 name_car_num +=1
-#             if 'bicycle' in name_train_i:
-#                 tuple_of_filename_class_list.append((name_train_i,0))
-#                 name_bicycle_num +=1
+#             if 'lamp' in name_train_i:
+#                 tuple_of_filename_class_list.append((name_train_i,2))
+#                 name_lamp_num +=1
+#             if 'motorcycle' in name_train_i:
+#                 name_motor_num +=1
+#                 tuple_of_filename_class_list.append((name_train_i,3))
+#             if 'people' in name_train_i:
+#                 tuple_of_filename_class_list.append((name_train_i,4))
+#                 name_people_num +=1
+#             if 'truck' in name_train_i:
+#                 tuple_of_filename_class_list.append((name_train_i,5))
+#                 name_truck_num +=1
 #         train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
 #                                       tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
 #         if limit:
@@ -106,136 +175,14 @@ class Subset(torch.utils.data.Dataset):
 #             JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
 #                               patches=patches, jig_classes=args.jigsaw_n_classes))
     
-#     print("bicycle", name_bicycle_num)
+#     print("bus", name_bus_num)
 #     print("car", name_car_num)
-#     print("name_person_num", name_person_num)
+#     print("lamp", name_lamp_num)
+#     print('motorcycle', name_motor_num)
+#     print('people', name_people_num)
+#     print('truck', name_truck_num)
 #     dataset = ConcatDataset(datasets)
 #     val_dataset = ConcatDataset(val_datasets)
-
-
-def get_train_dataloader(args, patches):
-    name_bus_num = 0
-    name_car_num = 0
-    name_lamp_num = 0
-    name_motor_num = 0
-    name_people_num = 0
-    name_truck_num = 0
-    tuple_of_filename_class_list = []
-    dataset_list = args.source
-    assert isinstance(dataset_list, list)
-    datasets = []
-    val_datasets = []
-    img_transformer, tile_transformer = get_train_transformers(args)
-    limit = args.limit_source
-    for dname in dataset_list:
-        name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_train.txt', 0)
-        # print(name_train[0], "-------------------", name_val[0])
-        # print(HEY)
-        for name_train_i in name_train:
-            if 'bus' in name_train_i:
-                name_bus_num +=1
-                tuple_of_filename_class_list.append((name_train_i,0))
-            if 'car' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,1))
-                name_car_num +=1
-            if 'lamp' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,2))
-                name_lamp_num +=1
-            if 'motorcycle' in name_train_i:
-                name_motor_num +=1
-                tuple_of_filename_class_list.append((name_train_i,3))
-            if 'people' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,4))
-                name_people_num +=1
-            if 'truck' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,5))
-                name_truck_num +=1
-        train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
-                                      tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
-        if limit:
-            train_dataset = Subset(train_dataset, limit)
-        datasets.append(train_dataset)
-        val_datasets.append(
-            JigsawTestDataset(name_val, labels_val, img_transformer=get_val_transformer(args),
-                              patches=patches, jig_classes=args.jigsaw_n_classes))
-    
-    print("bus", name_bus_num)
-    print("car", name_car_num)
-    print("lamp", name_lamp_num)
-    print('motorcycle', name_motor_num)
-    print('people', name_people_num)
-    print('truck', name_truck_num)
-    dataset = ConcatDataset(datasets)
-    val_dataset = ConcatDataset(val_datasets)
-
-    # breakpoint()
-    # weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))  # for flir
-
-    weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bus', 'car', 'lamp', 'motorcycle', 'people', 'truck']))   # for m3fd
-    weight=torch.DoubleTensor(weight)
-
-    sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
-
-    loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-    return loader, val_loader
-
-
-
-def get_train_val_dataloader(args, patches):
-    name_bus_num = 0
-    name_car_num = 0
-    name_lamp_num = 0
-    name_motor_num = 0
-    name_people_num = 0
-    name_truck_num = 0
-    tuple_of_filename_class_list = []
-    dataset_list = args.source
-    assert isinstance(dataset_list, list)
-    datasets = []
-    val_datasets = []
-    img_transformer, tile_transformer = get_train_transformers(args)
-    limit = args.limit_source
-    for dname in dataset_list:
-        name_train, name_val, labels_train, labels_val = get_split_dataset_info(os.path.join(dirname(__file__), 'txt_lists/')+ dname +'_validataion.txt', 0)
-        # print(name_train[0], "-------------------", name_val[0])
-        # print(HEY)
-        for name_train_i in name_train:
-            if 'bus' in name_train_i:
-                name_bus_num +=1
-                tuple_of_filename_class_list.append((name_train_i,0))
-            if 'car' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,1))
-                name_car_num +=1
-            if 'lamp' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,2))
-                name_lamp_num +=1
-            if 'motorcycle' in name_train_i:
-                name_motor_num +=1
-                tuple_of_filename_class_list.append((name_train_i,3))
-            if 'people' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,4))
-                name_people_num +=1
-            if 'truck' in name_train_i:
-                tuple_of_filename_class_list.append((name_train_i,5))
-                name_truck_num +=1
-        # train_dataset = JigsawDataset(name_train, labels_train, patches=patches, img_transformer=img_transformer,
-        #                               tile_transformer=tile_transformer, jig_classes=args.jigsaw_n_classes, bias_whole_image=args.bias_whole_image)
-        # if limit:
-        #     train_dataset = Subset(train_dataset, limit)
-        # datasets.append(train_dataset)
-        val_datasets.append(
-            JigsawTestDataset(name_train, labels_train, img_transformer=get_val_transformer(args),
-                              patches=patches, jig_classes=args.jigsaw_n_classes))
-    
-    print("bus", name_bus_num)
-    print("car", name_car_num)
-    print("lamp", name_lamp_num)
-    print('motorcycle', name_motor_num)
-    print('people', name_people_num)
-    print('truck', name_truck_num)
-    # dataset = ConcatDataset(datasets)
-    val_dataset = ConcatDataset(val_datasets)
 
     # breakpoint()
     # weight = make_weight_for_balanced_classes(tuple_of_filename_class_list, len(['bicycle', 'car', 'person']))  # for flir
@@ -246,9 +193,9 @@ def get_train_val_dataloader(args, patches):
     # sampleresh = torch.utils.data.sampler.WeightedRandomSampler(weight, len(weight))
 
     # loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler= sampleresh, num_workers=4, pin_memory=True, drop_last=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+    # val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
     # return loader, val_loader
-    return val_loader
+
 
 
 def get_val_dataloader(args, patches=False):
@@ -281,6 +228,7 @@ def get_jigsaw_val_dataloader(args, patches=False):
 
 def get_train_transformers(args):
     img_tr = [transforms.RandomResizedCrop((int(args.image_size), int(args.image_size)), (args.min_scale, args.max_scale))]
+    
     if args.random_horiz_flip > 0.0:
         img_tr.append(transforms.RandomHorizontalFlip(args.random_horiz_flip))
     if args.jitter > 0.0:
@@ -294,9 +242,10 @@ def get_train_transformers(args):
     return transforms.Compose(img_tr), transforms.Compose(tile_tr)
 
 
+    
 def get_val_transformer(args):
     img_tr = [transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(),
-              transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
+                transforms.Normalize([0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
     return transforms.Compose(img_tr)
 
 
