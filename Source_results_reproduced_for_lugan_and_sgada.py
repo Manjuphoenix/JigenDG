@@ -378,9 +378,12 @@ class Trainer:
         total_loss = 0
         total_cls_loss = 0.0
         total_cls_acc = 0.0
-        classes = ["bicycle", "car", "person"]
-        class_correct_list = list(0. for i in range(3))
-        class_total = list(0. for i in range(3))
+        # classes = ["bicycle", "car", "person"]        # For FLIR
+        # class_correct_list = list(0. for i in range(3))
+        # class_total = list(0. for i in range(3))
+        classes = ['bus', 'car', 'lamp', 'motorcycle', 'people', 'truck']           # For M3fd
+        class_correct_list = list(0. for i in range(6))
+        class_total = list(0. for i in range(6))
         c = []
         test_predicted = torch.empty(32)
         targets, probas = [], []
@@ -415,7 +418,7 @@ class Trainer:
                 val_cls_loss = total_loss/len(loader.dataset)
                 val_class_acc = class_correct/len(loader.dataset)
             acc = accuracy_score(targets, probas)
-            logger.info("Before accuracy: " + str(val_class_acc) + "After accuracy: " + str(acc))
+            logger.info("Before accuracy: " + str(val_class_acc) + " " + "After accuracy: " + str(acc))
             # print(HEY)
                 # breakpoint()
                 # acc = accuracy_score(targets,probas)
